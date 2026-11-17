@@ -56,3 +56,9 @@
 - Captured [dashboard](docs/screenshots/dashboard.png) and [retry history](docs/screenshots/retry-history.png) directly from the running Compose release. Visual review covered the desktop screenshots and a 390 px dashboard. Chromium checks verified both mobile layouts, clipboard ID copy, and token placeholders on the demo guide.
 - `BLOCKED_EXTERNAL` for hosting. The missing inputs are access to an existing container project, its PostgreSQL connection, and its assigned HTTPS origin. [Deployment instructions](docs/deployment.md) name the job, services, and environment settings.
 - Release gate closed. All mandatory local checks passed.
+
+## Follow-up · Immediate delivery eligibility
+
+- Reproduced the reported queue-test failures on Docker PostgreSQL 15.20. The original delivery default could round the due timestamp into the next millisecond. Migration `20261118000100_floor_delivery_due_time` truncates the timestamp before storage. The new regression failed before the migration and passed after it.
+- `npm run verify` exited successfully on the Docker-backed test database. Lint, type checking, 12 unit tests, 14 integration tests, both Chromium journeys, and the production build passed.
+- The migration also applied to the local runtime database on port 55432. Prisma reported no schema drift, and all 40 historical deliveries remained present.

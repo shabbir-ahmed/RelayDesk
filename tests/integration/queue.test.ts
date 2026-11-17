@@ -46,6 +46,20 @@ async function signedResponse(row: Claim) {
   return respond(() => receive(request, secret))
 }
 
+test('newly scheduled work is due by the transaction timestamp', async () => {
+  const { deliveryId } = await create('SUCCEED')
+  // Sample separate transactions to cover both halves of a millisecond.
+  for (let sample = 0; sample < 32; sample++) {
+    const [row] = await database.$queryRaw<{ due: boolean }[]>`
+      UPDATE "Delivery" SET "nextAttemptAt" = DEFAULT
+      WHERE id = ${deliveryId}::uuid
+      RETURNING "nextAttemptAt" <= CURRENT_TIMESTAMP AS due
+    `
+    expect(row.due).toBe(true)
+  }
+  expect((await claimNext(database))?.id).toBe(deliveryId)
+})
+
 test('T06 flaky delivery succeeds on attempt three and persistent failure exhausts its budget', async () => {
   for (const mode of ['FAIL_TWICE', 'ALWAYS_FAIL'] as const) {
     const { deliveryId } = await create(mode)

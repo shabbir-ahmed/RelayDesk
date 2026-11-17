@@ -70,7 +70,7 @@ model Delivery {
   status               DeliveryStatus    @default(PENDING)
   cycle                Int               @default(1)
   attemptsInCycle      Int               @default(0)
-  nextAttemptAt        DateTime?         @default(now()) @db.Timestamptz(3)
+  nextAttemptAt        DateTime?         @default(dbgenerated("date_trunc('milliseconds'::text, CURRENT_TIMESTAMP)")) @db.Timestamptz(3)
   leaseToken           String?           @db.Uuid
   leaseExpiresAt       DateTime?         @db.Timestamptz(3)
   receiverMode         ReceiverMode
