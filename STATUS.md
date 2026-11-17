@@ -5,7 +5,7 @@
 - Read the complete development plan and inspected the empty workspace. Consulted official Next.js, Tailwind, Prisma, and PostgreSQL references.
 - Added the pinned npm lockfile, strict TypeScript, app and worker bootstrap, environment validation, Compose PostgreSQL, Prisma schema and initial migration.
 - `npm run db:generate`, `npm run db:migrate`, `npm run db:seed`, `npm run typecheck`, and `npm run lint` passed.
-- Fresh PostgreSQL 15.13 database on port 55432 applied `20261117000100_initial`. An independent worker logged ready; web health returned `{"status":"ok","database":"reachable"}`.
+- Fresh PostgreSQL 15.13 database on port 55432 applied `20261117000100_initial`. An independent worker logged ready. Web health returned `{"status":"ok","database":"reachable"}`.
 - Docker was absent. A disposable Lima VM is being provisioned for M5 packaging checks. No product blocker at M0.
 - Next milestone: M1 first complete delivery.
 
@@ -45,3 +45,8 @@
 - On Docker Engine 29.10.0 / Linux arm64 and Node 22.23.5, the fresh PostgreSQL 15.20 container became healthy, migration `20261117000100_initial` completed with exit 0, and separate web and worker containers used the same runtime image. Health returned HTTP 200 and reported reachable PostgreSQL.
 - `npm run smoke` passed against Compose. Live delivery `a7f47cbc-86e2-49e4-8654-4730311a5b8b` recorded 503 → 503 → 200. Re-seeding kept all IDs and states unchanged across 40 historical and one live delivery, including eight terminal failures and eight replay fixtures.
 - Next milestone — M6 release gate and handoff.
+
+## M6 · Release gate in progress
+
+- A clean checkout installed via `npm ci`, generated Prisma, migrated a fresh runtime PostgreSQL database, seeded 40 deliveries, and passed lint, type checking, 12 unit cases, build, and fresh test migration.
+- The clean PostgreSQL run exposed timestamp rounding in test fixtures that set the due timestamp to the current instant. Test timestamps now use a known past instant and each queue case starts with independent data. Rechecking the affected integration suite and the pending browser phase.

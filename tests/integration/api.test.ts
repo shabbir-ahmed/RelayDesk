@@ -76,7 +76,7 @@ test('T05 times out through HTTP, reschedules, and terminates on a permanent 4xx
   expect(await database.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).toMatchObject({ status: 'PENDING', attemptsInCycle: 1 })
   expect(await claimNext(database)).toBeNull()
 
-  await database.$executeRaw`UPDATE "Delivery" SET "nextAttemptAt" = clock_timestamp() WHERE id = ${deliveryId}::uuid`
+  await database.$executeRaw`UPDATE "Delivery" SET "nextAttemptAt" = clock_timestamp() - interval '1 second' WHERE id = ${deliveryId}::uuid`
   expect(await finalize(database, (await claimNext(database))!, classifyHttp(422))).toBe(true)
   expect(await database.delivery.findUniqueOrThrow({ where: { id: deliveryId } })).toMatchObject({
     status: 'FAILED', attemptsInCycle: 2, nextAttemptAt: null,

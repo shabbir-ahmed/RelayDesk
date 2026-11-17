@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
-import { afterAll, beforeAll, expect, test } from 'vitest'
+import { afterAll, beforeEach, expect, test } from 'vitest'
 import { submitEvent } from '../../src/server/events'
 import { receive } from '../../src/server/receiver'
 import { respond } from '../../src/server/http'
@@ -15,7 +15,7 @@ import { prepareDatabase, testDb } from '../support/database'
 const database = testDb()
 const secret = 'integration-receiver-secret-only-for-tests'
 
-beforeAll(prepareDatabase)
+beforeEach(prepareDatabase)
 afterAll(() => database.$disconnect())
 
 async function create(mode: ReceiverMode) {
@@ -29,11 +29,11 @@ async function claim() {
 }
 
 async function makeDue(id: string) {
-  await database.$executeRaw`UPDATE "Delivery" SET "nextAttemptAt" = clock_timestamp() WHERE id = ${id}::uuid`
+  await database.$executeRaw`UPDATE "Delivery" SET "nextAttemptAt" = clock_timestamp() - interval '1 second' WHERE id = ${id}::uuid`
 }
 
 async function expire(id: string) {
-  await database.$executeRaw`UPDATE "Delivery" SET "leaseExpiresAt" = clock_timestamp() WHERE id = ${id}::uuid`
+  await database.$executeRaw`UPDATE "Delivery" SET "leaseExpiresAt" = clock_timestamp() - interval '1 second' WHERE id = ${id}::uuid`
 }
 
 async function signedResponse(row: Claim) {
@@ -73,6 +73,7 @@ test('T06 flaky delivery succeeds on attempt three and persistent failure exhaus
 test('T07 expired lease is fenced, unknown history survives, and budget is consumed', async () => {
   const { deliveryId } = await create('SUCCEED')
   const first = await claim()
+  expect(first.id).toBe(deliveryId)
   await expire(deliveryId)
   expect(await finalize(database, first, classifyHttp(200))).toBe(false)
   expect(await recoverExpired(database)).toBe(1)
