@@ -1,5 +1,7 @@
 # RelayDesk status
 
+**COMPLETE_LOCAL_DEPLOYMENT_BLOCKED**
+
 ## M0 · Complete
 
 - Read the complete development plan and inspected the empty workspace. Consulted official Next.js, Tailwind, Prisma, and PostgreSQL references.
@@ -46,7 +48,11 @@
 - `npm run smoke` passed against Compose. Live delivery `a7f47cbc-86e2-49e4-8654-4730311a5b8b` recorded 503 → 503 → 200. Re-seeding kept all IDs and states unchanged across 40 historical and one live delivery, including eight terminal failures and eight replay fixtures.
 - Next milestone — M6 release gate and handoff.
 
-## M6 · Release gate in progress
+## M6 · Local release gate passed
 
-- A clean checkout installed via `npm ci`, generated Prisma, migrated a fresh runtime PostgreSQL database, seeded 40 deliveries, and passed lint, type checking, 12 unit cases, build, and fresh test migration.
-- The clean PostgreSQL run exposed timestamp rounding in test fixtures that set the due timestamp to the current instant. Test timestamps now use a known past instant and each queue case starts with independent data. Rechecking the affected integration suite and the pending browser phase.
+- A clean clone installed the lockfile with `npm ci`, generated Prisma, applied migration `20261117000100_initial` to a fresh runtime and test database, and seeded 40 historical deliveries. PostgreSQL 15.13 ran the host test databases. PostgreSQL 15.20 ran in Compose.
+- The clean release gate passed lint, strict type checking, 12 unit cases, and the production build. Its first integration pass hit a timestamp rounding issue in test fixtures. The fixture correction uses timestamps in the past and independent data per queue case. The clean-checkout recheck passed all 13 integration cases, both Chromium journeys (50.2 seconds), lint, type checking, and production builds. Together these cover T01–T14.
+- The clean clone's exact `npm start` and `npm run worker` scripts ran separately. Native smoke delivery `ad9c5776-f8ca-4384-9087-304bedf24653` recorded one HTTP 200. The packaged worker also replayed failed fixture `d96bb826-de1f-8b59-a8e7-ee66a6d86551` successfully and kept both cycles visible in Chromium.
+- Captured [dashboard](docs/screenshots/dashboard.png) and [retry history](docs/screenshots/retry-history.png) directly from the running Compose release. Visual review covered the desktop screenshots and a 390 px dashboard. Chromium checks verified both mobile layouts, clipboard ID copy, and token placeholders on the demo guide.
+- `BLOCKED_EXTERNAL` for hosting. The missing inputs are access to an existing container project, its PostgreSQL connection, and its assigned HTTPS origin. [Deployment instructions](docs/deployment.md) name the job, services, and environment settings.
+- Release gate closed. All mandatory local checks passed.

@@ -2,7 +2,7 @@
 
 ## Current status
 
-`BLOCKED_EXTERNAL`. Local Docker packaging is the release target available in this workspace. Hosting requires access to an existing container project with a PostgreSQL database and an assigned HTTPS web origin. No hosting project, authorized deployment access, or hosted database connection was supplied. There is no live demo URL.
+`BLOCKED_EXTERNAL`. The local release passed on Docker Engine 29.10.0 for Linux arm64. Hosting is waiting on access to an existing container project, its PostgreSQL connection, and its assigned HTTPS web origin.
 
 To unblock hosting, share access to one existing project with permissions to run a one-off migration job and launch two long-running services. Configure its PostgreSQL connection and RelayDesk settings in the host's secret store and supply the assigned web origin. A single project can supply the web, worker, and database.
 
