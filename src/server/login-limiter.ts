@@ -1,22 +1,24 @@
 import { ApiError, unauthorized } from './http'
-import { matchesSecret } from './credentials'
 
 const limit = 5
 const windowMs = 60_000
-let blockedUntil = 0
-let failures = 0
+const failuresByWorkspace = new Map<string, { expires: number; attempts: number }>()
 
-export function checkLogin(value: string, credential: string, now = Date.now()) {
-  if (now >= blockedUntil) {
-    failures = 0
-    blockedUntil = now + windowMs
+export function checkLogin(matches: boolean, scope = 'demo', now = Date.now()) {
+  for (const [key, bucket] of failuresByWorkspace) {
+    if (now >= bucket.expires) failuresByWorkspace.delete(key)
   }
-  if (failures >= limit) {
+
+  const previous = failuresByWorkspace.get(scope)
+  if (previous && previous.attempts >= limit) {
     throw new ApiError(429, 'RATE_LIMITED', 'Too many sign-in attempts. Try again in a minute.')
   }
-  if (!matchesSecret(value, credential)) {
-    failures++
+  if (!matches) {
+    failuresByWorkspace.set(scope, {
+      expires: previous?.expires ?? now + windowMs,
+      attempts: (previous?.attempts ?? 0) + 1,
+    })
     throw unauthorized()
   }
-  failures = 0
+  failuresByWorkspace.delete(scope)
 }

@@ -184,6 +184,6 @@ test('T12 list filters, keyset paging, limits, counts, and response fields are b
   const summary = await (await request('/api/summary')).json()
   expect(summary.counts).toEqual({ FAILED: 1, PENDING: 51, PROCESSING: 0, DELIVERED: 0 })
   expect(Object.keys(first.items[0]).sort()).toEqual(['attemptsInCycle', 'createdAt', 'cycle', 'event', 'historical', 'id', 'status'])
-  expect(Object.keys(detail.event).sort()).toEqual(['createdAt', 'eventType', 'id', 'payload'])
+  expect(Object.keys(detail.event).sort()).toEqual(['createdAt', 'eventType', 'id', 'isTest', 'payload'])
   expect(JSON.stringify({ first, detail, summary })).not.toMatch(/leaseToken|idempotencyKey|requestFingerprint|canonicalBody|secret/i)
 })

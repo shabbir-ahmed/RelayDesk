@@ -1,10 +1,9 @@
 import type { PrismaClient } from '@prisma/client'
 import type { ReceiverMode } from '../shared/delivery'
 import { maxReplayCycles } from '../worker/timing'
-import { workspaceId } from './demo'
 import { ApiError, missingDelivery } from './http'
 
-export async function replay(db: PrismaClient, id: string, receiverMode?: ReceiverMode) {
+export async function replay(db: PrismaClient, workspaceId: string, id: string, receiverMode?: ReceiverMode) {
   return db.$transaction(async (tx) => {
     const [{ now }] = await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
     const where = { id, event: { workspaceId } }

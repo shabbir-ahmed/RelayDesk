@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeEach, expect, test } from 'vitest'
+import { demoScope } from '../../src/server/demo'
 import { submitEvent } from '../../src/server/events'
 import { receive } from '../../src/server/receiver'
 import { respond } from '../../src/server/http'
@@ -19,7 +20,7 @@ beforeEach(prepareDatabase)
 afterAll(() => database.$disconnect())
 
 async function create(mode: ReceiverMode) {
-  return submitEvent(database, { eventType: 'synthetic.integration', idempotencyKey: randomUUID(), payload: { synthetic: true }, receiverMode: mode })
+  return submitEvent(database, { eventType: 'synthetic.integration', idempotencyKey: randomUUID(), payload: { synthetic: true }, receiverMode: mode }, demoScope)
 }
 
 async function claim() {
@@ -114,7 +115,7 @@ test('T08 replay preserves attempts and replaces mode on the next cycle', async 
   const { eventId, deliveryId } = await create('ALWAYS_FAIL')
   const first = await claim()
   await finalize(database, first, classifyHttp(404))
-  await expect(replay(database, deliveryId, 'SUCCEED')).resolves.toMatchObject({ cycle: 2, status: 'PENDING' })
+  await expect(replay(database, demoScope.workspaceId, deliveryId, 'SUCCEED')).resolves.toMatchObject({ cycle: 2, status: 'PENDING' })
   const second = await claim()
   expect(second).toMatchObject({ attemptsInCycle: 1, cycle: 2, receiverMode: 'SUCCEED', event: { id: eventId } })
   expect(second.event.canonicalBody).toBe(first.event.canonicalBody)
@@ -131,7 +132,7 @@ test('T08 replay preserves attempts and replaces mode on the next cycle', async 
 test('T03 a fault between writes rolls back both event and delivery', async () => {
   const eventType = 'synthetic.atomic.rollback'
   const input = { eventType, idempotencyKey: randomUUID(), payload: { synthetic: true }, receiverMode: 'SUCCEED' as const }
-  await expect(submitEvent(database, input, () => { throw new Error('injected write failure') })).rejects.toThrow('injected write failure')
+  await expect(submitEvent(database, input, demoScope, () => { throw new Error('injected write failure') })).rejects.toThrow('injected write failure')
   expect(await database.event.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0)
   expect(await database.delivery.count({ where: { event: { eventType } } })).toBe(0)
 })
@@ -156,19 +157,19 @@ test('T04 two independent clients race for a due row and skip a held row lock', 
 
 test('T08 pending and delivered replay conflict, concurrent replay wins once, replay limit is enforced', async () => {
   const { deliveryId } = await create('ALWAYS_FAIL')
-  await expect(replay(database, deliveryId)).rejects.toMatchObject({ status: 409 })
+  await expect(replay(database, demoScope.workspaceId, deliveryId)).rejects.toMatchObject({ status: 409 })
   await finalize(database, await claim(), classifyHttp(400))
-  const results = await Promise.allSettled([replay(database, deliveryId), replay(database, deliveryId)])
+  const results = await Promise.allSettled([replay(database, demoScope.workspaceId, deliveryId), replay(database, demoScope.workspaceId, deliveryId)])
   expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
   expect(results.find(({ status }) => status === 'rejected')).toMatchObject({ reason: { status: 409 } })
   for (let cycle = 2; cycle <= 4; cycle++) {
     const row = await claim()
     expect(row.cycle).toBe(cycle)
     await finalize(database, row, classifyHttp(400))
-    if (cycle < 4) await replay(database, deliveryId)
+    if (cycle < 4) await replay(database, demoScope.workspaceId, deliveryId)
   }
-  await expect(replay(database, deliveryId)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('all 3') })
+  await expect(replay(database, demoScope.workspaceId, deliveryId)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('all 3') })
   const success = await create('SUCCEED')
   await finalize(database, await claim(), classifyHttp(200))
-  await expect(replay(database, success.deliveryId)).rejects.toMatchObject({ status: 409 })
+  await expect(replay(database, demoScope.workspaceId, success.deliveryId)).rejects.toMatchObject({ status: 409 })
 })

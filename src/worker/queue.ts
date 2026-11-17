@@ -1,15 +1,21 @@
 import { randomUUID } from 'node:crypto'
 import type { Prisma, PrismaClient } from '@prisma/client'
+import type { AppMode } from '../server/env'
 import { retryAt, type Outcome } from './outcomes'
 import { timing } from './timing'
 
-export async function claimNext(db: PrismaClient) {
+export async function claimNext(db: PrismaClient, mode: AppMode = 'demo') {
   return db.$transaction(async (tx) => {
     const [row] = await tx.$queryRaw<{ id: string; now: Date }[]>`
       SELECT id, clock_timestamp() AS now
       FROM "Delivery"
       WHERE status = 'PENDING' AND "nextAttemptAt" <= statement_timestamp()
         AND (NOT historical OR cycle > 1)
+        AND EXISTS (
+          SELECT 1 FROM "Endpoint"
+          WHERE "Endpoint".id = "Delivery"."endpointId"
+            AND ("destinationUrl" IS NULL) = ${mode === 'demo'}
+        )
       ORDER BY "nextAttemptAt", id
       FOR UPDATE SKIP LOCKED LIMIT 1
     `
@@ -28,6 +34,7 @@ export async function claimNext(db: PrismaClient) {
       select: {
         id: true, cycle: true, attemptsInCycle: true, receiverMode: true,
         event: { select: { id: true, canonicalBody: true } },
+        endpoint: { select: { id: true, destinationUrl: true } },
       },
     })
     await tx.deliveryAttempt.create({
@@ -84,13 +91,18 @@ export async function finalize(db: PrismaClient, claim: Claim, outcome: Outcome)
   })
 }
 
-export async function recoverExpired(db: PrismaClient) {
+export async function recoverExpired(db: PrismaClient, mode: AppMode = 'demo') {
   return db.$transaction(async (tx) => {
     const rows = await tx.$queryRaw<{ id: string; cycle: number; attemptsInCycle: number; leaseToken: string }[]>`
       SELECT id, cycle, "attemptsInCycle", "leaseToken"
       FROM "Delivery"
       WHERE status = 'PROCESSING' AND "leaseExpiresAt" <= statement_timestamp()
         AND (NOT historical OR cycle > 1)
+        AND EXISTS (
+          SELECT 1 FROM "Endpoint"
+          WHERE "Endpoint".id = "Delivery"."endpointId"
+            AND ("destinationUrl" IS NULL) = ${mode === 'demo'}
+        )
       ORDER BY "leaseExpiresAt", id
       FOR UPDATE SKIP LOCKED LIMIT ${timing.recoveryBatch}
     `

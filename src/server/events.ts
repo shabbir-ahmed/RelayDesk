@@ -3,8 +3,8 @@ import type { PrismaClient } from '@prisma/client'
 import stringify from 'fast-json-stable-stringify'
 import { z } from 'zod'
 import { receiverModes } from '../shared/delivery'
-import { endpointId, workspaceId } from './demo'
 import { ApiError } from './http'
+import { workspaceDestination } from './workspaces'
 
 const postgresText = (value: string) => !value.includes('\u0000') && value.isWellFormed()
 
@@ -25,41 +25,55 @@ function storableJson(object: Record<string, unknown>) {
   return true
 }
 
-export const submissionSchema = z.strictObject({
+export const workspaceSubmissionSchema = z.strictObject({
   eventType: z.string().trim().min(1).max(80).refine(postgresText, 'Use valid text.'),
   idempotencyKey: z.string().trim().min(1).max(128).refine(postgresText, 'Use valid text.'),
   payload: z.custom<Record<string, unknown>>(
     (value) => value !== null && typeof value === 'object' && !Array.isArray(value),
     'Enter a JSON object.',
   ).refine(storableJson, 'Use finite JSON values, valid Unicode text, and at most 64 levels of nesting.'),
-  receiverMode: z.enum(receiverModes),
 })
+
+export const submissionSchema = workspaceSubmissionSchema.extend({ receiverMode: z.enum(receiverModes) })
 
 type Submission = z.infer<typeof submissionSchema>
 
 class DuplicateSubmission extends Error {}
 
-export function fingerprint({ eventType, payload, receiverMode }: Omit<Submission, 'idempotencyKey'>) {
-  return createHash('sha256').update(stringify({ eventType, payload, receiverMode })).digest('hex')
+export function fingerprint({ eventType, payload, receiverMode }: Omit<Submission, 'idempotencyKey'>, isTest = false) {
+  return createHash('sha256').update(stringify({ eventType, payload, receiverMode, ...(isTest && { test: true }) })).digest('hex')
 }
 
-export function eventBody(event: { id: string; eventType: string; payload: unknown; createdAt: Date }) {
-  return stringify({ id: event.id, type: event.eventType, payload: event.payload, createdAt: event.createdAt.toISOString() })
+export function eventBody(event: { id: string; eventType: string; payload: unknown; createdAt: Date; isTest?: boolean }) {
+  return stringify({ id: event.id, type: event.eventType, payload: event.payload, createdAt: event.createdAt.toISOString(), ...(event.isTest && { test: true }) })
 }
 
-export async function submitEvent(db: PrismaClient, input: Submission, afterEventWrite?: () => void) {
-  const requestFingerprint = fingerprint(input)
+type DestinationScope = { workspaceId: string; endpointId: string; isTest?: boolean }
+
+export async function submitWorkspaceEvent(
+  db: PrismaClient, workspaceId: string, input: z.infer<typeof workspaceSubmissionSchema>, isTest = false,
+) {
+  const endpoint = await workspaceDestination(db, workspaceId)
+  if (!endpoint?.destinationUrl) {
+    throw new ApiError(409, 'CONFLICT', 'This workspace needs an approved HTTPS destination.')
+  }
+  return submitEvent(db, { ...input, receiverMode: 'SUCCEED' }, { workspaceId, endpointId: endpoint.id, isTest })
+}
+
+export async function submitEvent(db: PrismaClient, input: Submission, scope: DestinationScope, afterEventWrite?: () => void) {
+  const { workspaceId, endpointId, isTest = false } = scope
+  const requestFingerprint = fingerprint(input, isTest)
   try {
     const result = await db.$transaction(async (tx) => {
       const id = randomUUID()
       const createdAt = new Date()
-      const body = eventBody({ id, eventType: input.eventType, payload: input.payload, createdAt })
+      const body = eventBody({ id, eventType: input.eventType, payload: input.payload, createdAt, isTest })
       // Pass JSON as text because Prisma's object serializer drops keys such as "__proto__".
       const [event] = await tx.$queryRaw<{ id: string }[]>`
         INSERT INTO "Event" (id, "workspaceId", "endpointId", "eventType", payload,
-          "canonicalBody", "requestFingerprint", "idempotencyKey", "createdAt")
+          "canonicalBody", "requestFingerprint", "idempotencyKey", "createdAt", "isTest")
         VALUES (${id}::uuid, ${workspaceId}::uuid, ${endpointId}::uuid, ${input.eventType},
-          ${stringify(input.payload)}::jsonb, ${body}, ${requestFingerprint}, ${input.idempotencyKey}, ${createdAt})
+          ${stringify(input.payload)}::jsonb, ${body}, ${requestFingerprint}, ${input.idempotencyKey}, ${createdAt}, ${isTest})
         ON CONFLICT ("workspaceId", "idempotencyKey") DO NOTHING
         RETURNING id
       `

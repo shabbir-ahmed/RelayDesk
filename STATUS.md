@@ -62,3 +62,10 @@
 - Reproduced the reported queue-test failures on Docker PostgreSQL 15.20. The original delivery default could round the due timestamp into the next millisecond. Migration `20261118000100_floor_delivery_due_time` truncates the timestamp before storage. The new regression failed before the migration and passed after it.
 - `npm run verify` exited successfully on the Docker-backed test database. Lint, type checking, 12 unit tests, 14 integration tests, both Chromium journeys, and the production build passed.
 - The migration also applied to the local runtime database on port 55432. Prisma reported no schema drift, and all 40 historical deliveries remained present.
+
+## Private beta · Phase 1
+
+- Private mode now provides workspace sign-in, one administrator-approved HTTPS destination per workspace, revocable API keys, signed test events, and session-scoped delivery history and replay. The isolated demo remains available in demo mode.
+- `npm run verify` passed lint, type checking, the production build, 33 unit tests, 14 PostgreSQL integration tests, and three Chromium journeys. The beta journey used two workspaces and a local HTTPS receiver that verified signatures, rejected an initial test event, and accepted its replay. It also verified cross-workspace denials and API key revocation.
+- Migration `20261118000200_private_beta` applied to the disposable test database and matched the Prisma schema. An isolated Docker stack verified fresh migrations, startup, compiled workspace provisioning, and private sign-in. The existing local Docker project was kept available.
+- Local setup and credential requirements are in [Private beta](docs/private-beta.md).

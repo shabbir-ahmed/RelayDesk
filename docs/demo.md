@@ -1,5 +1,7 @@
 # Two-minute demo
 
+This walkthrough uses the isolated `RELAYDESK_MODE=demo` instance.
+
 1. Open the dashboard and pick a sample row. Show the persisted status and attempt timeline.
 2. Sign in as operator and create a **Fail twice** event. Keep the sample JSON or edit its synthetic reference. The next attempts become eligible 5 and 15 seconds after failure. Show two HTTP 503s followed by HTTP 200.
 3. Return to the dashboard, filter for **Failed**, and open a failed sample. Choose **Replay delivery**, select **Succeed**, and queue it. The event ID stays the same and both cycles appear in the timeline.
