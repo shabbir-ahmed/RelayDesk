@@ -28,7 +28,10 @@ function storableJson(object: Record<string, unknown>) {
 export const submissionSchema = z.strictObject({
   eventType: z.string().trim().min(1).max(80).refine(postgresText, 'Use valid text.'),
   idempotencyKey: z.string().trim().min(1).max(128).refine(postgresText, 'Use valid text.'),
-  payload: z.record(z.string(), z.unknown()).refine(storableJson, 'Use finite JSON values, valid Unicode text, and at most 64 levels of nesting.'),
+  payload: z.custom<Record<string, unknown>>(
+    (value) => value !== null && typeof value === 'object' && !Array.isArray(value),
+    'Enter a JSON object.',
+  ).refine(storableJson, 'Use finite JSON values, valid Unicode text, and at most 64 levels of nesting.'),
   receiverMode: z.enum(receiverModes),
 })
 

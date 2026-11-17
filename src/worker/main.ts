@@ -1,7 +1,7 @@
 import { setTimeout as sleep } from 'node:timers/promises'
 import { db } from '../server/db'
 import { workerEnv } from '../server/env'
-import { claimNext, finalize } from './queue'
+import { claimNext, finalize, recoverExpired } from './queue'
 import { send } from './send'
 import { timing } from './timing'
 
@@ -17,9 +17,10 @@ async function main() {
     console.info('RelayDesk worker ready')
     while (!stop.signal.aborted) {
       try {
+        await recoverExpired(database)
+        if (stop.signal.aborted) break
         const claim = await claimNext(database)
         if (claim) {
-          if (stop.signal.aborted) break
           const outcome = await send(claim, config.RECEIVER_BASE_URL, config.RECEIVER_SECRET)
           if (!await finalize(database, claim, outcome)) {
             console.warn('stale-completion', { deliveryId: claim.id, cycle: claim.cycle })

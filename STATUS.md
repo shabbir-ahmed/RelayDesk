@@ -15,3 +15,11 @@
 - `npm run typecheck` and `npm run lint` passed. M1 HTTP smoke returned 201 on initial submission, 200 with the same IDs on repeat, and 409 on conflicting input.
 - Delivery `52f46120-5dd8-4ddc-90cd-640c89a99d15` persisted as DELIVERED with one SUCCEEDED attempt and HTTP 200. The detail page rendered that real attempt.
 - No M1 exit defects. Next milestone: M2 failure and recovery.
+
+## M2 · Complete
+
+- Implemented HMAC over bounded metadata and exact body bytes, four receiver modes, fixed backoff, expired lease recovery, fenced finalization, and atomic failed-only replay.
+- `npm run typecheck`, `npm run lint`, and 11 retry-policy unit cases passed.
+- `npm run test:integration` migrated the separate PostgreSQL test database and passed three cases. FAIL_TWICE succeeded on attempt three, persistent failure exhausted the retry budget, stale workers could not update expired or superseded leases, and replay kept the original event and attempt history.
+- Temporary Docker engine is running in an isolated Lima VM. Node and PostgreSQL base images pulled successfully for M5.
+- No outstanding M2 defects. Next milestone: M3 access and finished UI.

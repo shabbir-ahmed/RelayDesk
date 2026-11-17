@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
+import { retryAt, type Outcome } from './outcomes'
 import { timing } from './timing'
 
 export async function claimNext(db: PrismaClient) {
@@ -7,7 +8,7 @@ export async function claimNext(db: PrismaClient) {
     const [row] = await tx.$queryRaw<{ id: string; now: Date }[]>`
       SELECT id, clock_timestamp() AS now
       FROM "Delivery"
-      WHERE status = 'PENDING' AND "nextAttemptAt" <= clock_timestamp()
+      WHERE status = 'PENDING' AND "nextAttemptAt" <= statement_timestamp()
         AND (NOT historical OR cycle > 1)
       ORDER BY "nextAttemptAt", id
       FOR UPDATE SKIP LOCKED LIMIT 1
@@ -40,30 +41,74 @@ export async function claimNext(db: PrismaClient) {
 }
 
 export type Claim = NonNullable<Awaited<ReturnType<typeof claimNext>>>
-export type Outcome = { ok: boolean; status?: number; error?: string }
+
+async function release(
+  tx: Prisma.TransactionClient, id: string, now: Date, delivered: boolean, nextAttemptAt: Date | null,
+) {
+  await tx.delivery.update({
+    where: { id },
+    data: {
+      status: delivered ? 'DELIVERED' : nextAttemptAt ? 'PENDING' : 'FAILED',
+      leaseToken: null, leaseExpiresAt: null, nextAttemptAt, updatedAt: now,
+    },
+  })
+}
 
 export async function finalize(db: PrismaClient, claim: Claim, outcome: Outcome) {
   return db.$transaction(async (tx) => {
-    const [lease] = await tx.$queryRaw<{ now: Date }[]>`
-      SELECT clock_timestamp() AS now FROM "Delivery"
+    const [lease] = await tx.$queryRaw<{ leaseExpiresAt: Date }[]>`
+      SELECT "leaseExpiresAt" FROM "Delivery"
       WHERE id = ${claim.id}::uuid AND status = 'PROCESSING'
         AND cycle = ${claim.cycle} AND "leaseToken" = ${claim.leaseToken}::uuid
-        AND "leaseExpiresAt" > clock_timestamp()
       FOR UPDATE
     `
     if (!lease) return false
+    const [{ now }] = await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+    if (lease.leaseExpiresAt <= now) return false
+
+    const succeeded = outcome.kind === 'success'
     await tx.deliveryAttempt.update({
-      where: { deliveryId_cycle_attemptNumber: { deliveryId: claim.id, cycle: claim.cycle, attemptNumber: claim.attemptsInCycle } },
+      where: {
+        deliveryId_cycle_attemptNumber: { deliveryId: claim.id, cycle: claim.cycle, attemptNumber: claim.attemptsInCycle },
+        leaseToken: claim.leaseToken, status: 'STARTED',
+      },
       data: {
-        status: outcome.ok ? 'SUCCEEDED' : 'FAILED', completedAt: lease.now,
-        httpStatus: outcome.status, error: outcome.error,
-        durationMs: Math.max(0, lease.now.getTime() - claim.startedAt.getTime()),
+        status: succeeded ? 'SUCCEEDED' : 'FAILED', completedAt: now,
+        httpStatus: outcome.status, error: succeeded ? null : outcome.error,
+        durationMs: Math.max(0, now.getTime() - claim.startedAt.getTime()),
       },
     })
-    await tx.delivery.update({
-      where: { id: claim.id },
-      data: { status: outcome.ok ? 'DELIVERED' : 'FAILED', leaseToken: null, leaseExpiresAt: null, updatedAt: lease.now },
-    })
+    const next = outcome.kind === 'retry' ? retryAt(now, claim.attemptsInCycle) : null
+    await release(tx, claim.id, now, succeeded, next)
     return true
+  })
+}
+
+export async function recoverExpired(db: PrismaClient) {
+  return db.$transaction(async (tx) => {
+    const rows = await tx.$queryRaw<{ id: string; cycle: number; attemptsInCycle: number; leaseToken: string }[]>`
+      SELECT id, cycle, "attemptsInCycle", "leaseToken"
+      FROM "Delivery"
+      WHERE status = 'PROCESSING' AND "leaseExpiresAt" <= statement_timestamp()
+        AND (NOT historical OR cycle > 1)
+      ORDER BY "leaseExpiresAt", id
+      FOR UPDATE SKIP LOCKED LIMIT ${timing.recoveryBatch}
+    `
+    if (!rows.length) return 0
+    const [{ now }] = await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+    for (const row of rows) {
+      await tx.deliveryAttempt.update({
+        where: {
+          deliveryId_cycle_attemptNumber: { deliveryId: row.id, cycle: row.cycle, attemptNumber: row.attemptsInCycle },
+          leaseToken: row.leaseToken, status: 'STARTED',
+        },
+        data: {
+          status: 'UNKNOWN', completedAt: now,
+          error: 'Worker lease expired. The receiver may have processed this request.',
+        },
+      })
+      await release(tx, row.id, now, false, retryAt(now, row.attemptsInCycle))
+    }
+    return rows.length
   })
 }
