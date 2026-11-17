@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto'
+import { PrismaClient } from '@prisma/client'
 import { afterAll, beforeAll, expect, test } from 'vitest'
-import { db } from '../../src/server/db'
-import { ensureDemo } from '../../src/server/demo'
 import { submitEvent } from '../../src/server/events'
 import { receive } from '../../src/server/receiver'
 import { respond } from '../../src/server/http'
@@ -11,20 +10,12 @@ import type { ReceiverMode } from '../../src/shared/delivery'
 import { classifyHttp } from '../../src/worker/outcomes'
 import { claimNext, finalize, recoverExpired, type Claim } from '../../src/worker/queue'
 
-if (process.env.RELAYDESK_TEST_RUN !== '1') throw new Error('Run via npm run test:integration.')
-const database = db()
+import { prepareDatabase, testDb } from '../support/database'
+
+const database = testDb()
 const secret = 'integration-receiver-secret-only-for-tests'
 
-async function reset() {
-  await database.deliveryAttempt.deleteMany()
-  await database.delivery.deleteMany()
-  await database.event.deleteMany()
-}
-
-beforeAll(async () => {
-  await reset()
-  await ensureDemo(database)
-})
+beforeAll(prepareDatabase)
 afterAll(() => database.$disconnect())
 
 async function create(mode: ReceiverMode) {
@@ -99,7 +90,7 @@ test('T07 expired lease is fenced, unknown history survives, and budget is consu
   expect(await recoverExpired(database)).toBe(1)
   expect(await claimNext(database)).toBeNull()
   expect(await finalize(database, third, classifyHttp(200))).toBe(false)
-  const result = await database.delivery.findUniqueOrThrow({ where: { id: deliveryId }, include: { attempts: true } })
+  const result = await database.delivery.findUniqueOrThrow({ where: { id: deliveryId }, include: { attempts: { orderBy: { attemptNumber: 'asc' } } } })
   expect(result).toMatchObject({ status: 'FAILED', leaseToken: null, leaseExpiresAt: null, attemptsInCycle: 3 })
   expect(result.attempts.map(({ status }) => status)).toEqual(['UNKNOWN', 'UNKNOWN', 'UNKNOWN'])
 })
@@ -120,4 +111,49 @@ test('T08 replay preserves attempts and replaces mode on the next cycle', async 
   expect(result.status).toBe('DELIVERED')
   expect(result.attempts.map(({ cycle, receiverMode, status }) => [cycle, receiverMode, status]))
     .toEqual([[1, 'ALWAYS_FAIL', 'FAILED'], [2, 'SUCCEED', 'SUCCEEDED']])
+})
+
+test('T03 a fault between writes rolls back both event and delivery', async () => {
+  const eventType = 'synthetic.atomic.rollback'
+  const input = { eventType, idempotencyKey: randomUUID(), payload: { synthetic: true }, receiverMode: 'SUCCEED' as const }
+  await expect(submitEvent(database, input, () => { throw new Error('injected write failure') })).rejects.toThrow('injected write failure')
+  expect(await database.event.count({ where: { idempotencyKey: input.idempotencyKey } })).toBe(0)
+  expect(await database.delivery.count({ where: { event: { eventType } } })).toBe(0)
+})
+
+test('T04 two independent clients race for a due row and skip a held row lock', async () => {
+  const { deliveryId } = await create('SUCCEED')
+  const second = new PrismaClient({ datasourceUrl: process.env.DATABASE_URL })
+  try {
+    await database.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "Delivery" WHERE id = ${deliveryId}::uuid FOR UPDATE`
+      expect(await claimNext(second)).toBeNull()
+    })
+    const claims = (await Promise.all([claimNext(database), claimNext(second)])).filter((row) => row !== null)
+    expect(claims).toHaveLength(1)
+    expect(claims[0].id).toBe(deliveryId)
+    expect(await database.deliveryAttempt.count({ where: { deliveryId, status: 'STARTED' } })).toBe(1)
+    await finalize(database, claims[0], classifyHttp(200))
+  } finally {
+    await second.$disconnect()
+  }
+})
+
+test('T08 pending and delivered replay conflict, concurrent replay wins once, replay limit is enforced', async () => {
+  const { deliveryId } = await create('ALWAYS_FAIL')
+  await expect(replay(database, deliveryId)).rejects.toMatchObject({ status: 409 })
+  await finalize(database, await claim(), classifyHttp(400))
+  const results = await Promise.allSettled([replay(database, deliveryId), replay(database, deliveryId)])
+  expect(results.filter(({ status }) => status === 'fulfilled')).toHaveLength(1)
+  expect(results.find(({ status }) => status === 'rejected')).toMatchObject({ reason: { status: 409 } })
+  for (let cycle = 2; cycle <= 4; cycle++) {
+    const row = await claim()
+    expect(row.cycle).toBe(cycle)
+    await finalize(database, row, classifyHttp(400))
+    if (cycle < 4) await replay(database, deliveryId)
+  }
+  await expect(replay(database, deliveryId)).rejects.toMatchObject({ status: 409, message: expect.stringContaining('all 3') })
+  const success = await create('SUCCEED')
+  await finalize(database, await claim(), classifyHttp(200))
+  await expect(replay(database, success.deliveryId)).rejects.toMatchObject({ status: 409 })
 })

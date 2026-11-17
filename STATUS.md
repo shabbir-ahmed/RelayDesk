@@ -29,3 +29,11 @@
 - Added encrypted four-hour operator cookies, bearer submission, origin checks, bounded sign-in throttling, replay routes, and the dashboard, detail, demo guide, and login UI.
 - `npm run typecheck` and `npm run lint` passed. A real Chromium smoke verified viewer restrictions, operator sign-in and creation, three actual HTTP 503s, replay in SUCCEED mode, and successful HTTP 200 in cycle 2 with both cycles still visible.
 - No M3 exit defects. Next milestone: M4 correctness verification.
+
+## M4 · Complete
+
+- Added coverage for T01–T14, including real PostgreSQL rollback and unique-key races, two independent claim clients, concurrent replay, streamed input, signed HTTP, session/origin checks, stable cursor pagination, and production-browser journeys.
+- Fixed a T01 failure in which Prisma's JSON argument serializer dropped a valid nested key. A parameterized insert now passes canonical JSON text directly to PostgreSQL.
+- `npm run test:unit` passed 12 cases. `npm run test:integration` passed 13 PostgreSQL/API cases. `npm run test:e2e` passed both Chromium cases (49.2 seconds total). Both database suites built the production application successfully.
+- Manual crash smoke passed. Worker PID 30866 received SIGKILL after persisting a STARTED attempt for delivery `7a0309b2-e394-47e5-a19a-a57589e1ab84`. Restarted PID 30868 recorded the expired attempt as UNKNOWN and claimed attempt 2.
+- Next milestone — M5 release packaging.
