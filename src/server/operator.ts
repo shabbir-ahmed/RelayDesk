@@ -17,9 +17,10 @@ function sessionConfig(config: ReturnType<typeof webEnv>) {
   }
 }
 
-export async function hasOperatorSession(config = webEnv()) {
-  const { name, key } = sessionConfig(config)
-  const token = (await cookies()).get(name)?.value
+export async function hasOperatorSession(config?: ReturnType<typeof webEnv>) {
+  const store = await cookies()
+  const { name, key } = sessionConfig(config ?? webEnv())
+  const token = store.get(name)?.value
   if (!token || token.length > 1_024) return false
   try {
     const { payload } = await jwtDecrypt(token, key, {

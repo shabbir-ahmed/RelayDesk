@@ -2,8 +2,14 @@ export function testDatabaseUrl(env = process.env) {
   const runtimeUrl = env.DATABASE_URL
   const testUrl = env.TEST_DATABASE_URL
   if (!runtimeUrl || !testUrl) throw new Error('Set DATABASE_URL and a separate TEST_DATABASE_URL.')
-  const runtime = new URL(runtimeUrl)
-  const test = new URL(testUrl)
+  let runtime
+  let test
+  try {
+    runtime = new URL(runtimeUrl)
+    test = new URL(testUrl)
+  } catch {
+    throw new Error('Set valid PostgreSQL URLs for DATABASE_URL and TEST_DATABASE_URL.')
+  }
   const isPostgres = (url) => ['postgresql:', 'postgres:'].includes(url.protocol)
   if (!isPostgres(runtime) || !isPostgres(test)) throw new Error('Use PostgreSQL URLs.')
   const runtimeDb = decodeURIComponent(runtime.pathname)

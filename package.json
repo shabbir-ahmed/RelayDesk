@@ -20,7 +20,8 @@
     "test:unit": "vitest run tests/unit",
     "test:integration": "node scripts/test-runner.mjs integration",
     "test:e2e": "node scripts/test-runner.mjs e2e",
-    "verify": "node scripts/test-runner.mjs verify"
+    "verify": "node scripts/test-runner.mjs verify",
+    "smoke": "node --env-file-if-exists=.env scripts/smoke.mjs"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

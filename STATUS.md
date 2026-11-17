@@ -37,3 +37,11 @@
 - `npm run test:unit` passed 12 cases. `npm run test:integration` passed 13 PostgreSQL/API cases. `npm run test:e2e` passed both Chromium cases (49.2 seconds total). Both database suites built the production application successfully.
 - Manual crash smoke passed. Worker PID 30866 received SIGKILL after persisting a STARTED attempt for delivery `7a0309b2-e394-47e5-a19a-a57589e1ab84`. Restarted PID 30868 recorded the expired attempt as UNKNOWN and claimed attempt 2.
 - Next milestone — M5 release packaging.
+
+## M5 · Complete
+
+- Added the multi-stage Dockerfile, database/migration/web/worker Compose services, 40 deterministic historical fixtures, the smoke script, GitHub Actions workflow, and release documentation.
+- Fixed clean Docker prerendering without secrets by moving operator configuration behind the request-time cookie read. The image then built successfully with no runtime credentials.
+- On Docker Engine 29.10.0 / Linux arm64 and Node 22.23.5, the fresh PostgreSQL 15.20 container became healthy, migration `20261117000100_initial` completed with exit 0, and separate web and worker containers used the same runtime image. Health returned HTTP 200 and reported reachable PostgreSQL.
+- `npm run smoke` passed against Compose. Live delivery `a7f47cbc-86e2-49e4-8654-4730311a5b8b` recorded 503 → 503 → 200. Re-seeding kept all IDs and states unchanged across 40 historical and one live delivery, including eight terminal failures and eight replay fixtures.
+- Next milestone — M6 release gate and handoff.
