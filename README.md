@@ -67,3 +67,7 @@ Run `npm run smoke` against a running instance using its `APP_ORIGIN` and `API_T
 ## Hosting
 
 The local release uses the same build for the web and worker. The [deployment guide](docs/deployment.md) gives the container commands, environment, and current hosting status.
+
+## License
+
+RelayDesk is available under the [MIT License](LICENSE).
