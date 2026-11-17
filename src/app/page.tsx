@@ -1,17 +1,15 @@
-import Link from 'next/link'
+import { Dashboard } from '@/components/dashboard'
 import { db } from '@/server/db'
-import { listDeliveries } from '@/server/reads'
+import { hasOperatorSession } from '@/server/operator'
+import { deliverySummary, listDeliveries } from '@/server/reads'
 
 export const dynamic = 'force-dynamic'
 
-export default async function Dashboard() {
-  const { items } = await listDeliveries(db())
-  return <main className="p-8">
-    <h1 className="text-3xl font-bold">RelayDesk</h1>
-    <ul className="mt-5 space-y-3">
-      {items.map(({ id, status, event }) => <li key={id}>
-        <Link className="underline" href={`/deliveries/${id}`}>{event.eventType} · {status}</Link>
-      </li>)}
-    </ul>
-  </main>
+export default async function Page() {
+  const [operator, initial] = await Promise.all([
+    hasOperatorSession(),
+    Promise.all([listDeliveries(db()), deliverySummary(db())])
+      .then(([list, summary]) => ({ list, summary })).catch(() => undefined),
+  ])
+  return <Dashboard operator={operator} initial={initial} />
 }

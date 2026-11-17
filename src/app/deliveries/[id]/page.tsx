@@ -1,20 +1,15 @@
-import Link from 'next/link'
 import { notFound } from 'next/navigation'
+import { DeliveryDetail } from '@/components/delivery-detail'
 import { db } from '@/server/db'
+import { hasOperatorSession } from '@/server/operator'
 import { deliveryDetail } from '@/server/reads'
 
 export const dynamic = 'force-dynamic'
+export const metadata = { title: 'Delivery detail' }
 
-export default async function Delivery({ params }: { params: Promise<{ id: string }> }) {
-  const delivery = await deliveryDetail(db(), (await params).id)
+export default async function Page({ params }: { params: Promise<{ id: string }> }) {
+  const { id } = await params
+  const [delivery, operator] = await Promise.all([deliveryDetail(db(), id), hasOperatorSession()])
   if (!delivery) notFound()
-  return <main className="p-8">
-    <Link href="/" className="underline">Deliveries</Link>
-    <h1 className="mt-4 text-3xl font-bold">{delivery.event.eventType}</h1>
-    <p>{delivery.status}</p>
-    <pre className="my-4">{JSON.stringify(delivery.event.payload, null, 2)}</pre>
-    <ol>{delivery.attempts.map((attempt) => <li key={attempt.id}>
-      Attempt {attempt.attemptNumber} · {attempt.status} · HTTP {attempt.httpStatus}
-    </li>)}</ol>
-  </main>
+  return <DeliveryDetail key={id} id={id} initial={delivery} operator={operator} />
 }
