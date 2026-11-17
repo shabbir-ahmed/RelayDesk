@@ -13,7 +13,9 @@ import { useLive } from './use-live'
 
 type DashboardData = { list: DeliveryList; summary: DeliverySummary | null }
 
-export function Dashboard({ operator, initial }: { operator: boolean; initial?: DashboardData }) {
+export function Dashboard({ operator, initial, workspaceName, destination }: {
+  operator: boolean; initial?: DashboardData; workspaceName?: string; destination?: string | null
+}) {
   const [filter, setFilter] = useState<DeliveryStatus | ''>('')
   const [cursors, setCursors] = useState<(string | null)[]>([null])
   const [revision, setRevision] = useState(0)
@@ -38,12 +40,14 @@ export function Dashboard({ operator, initial }: { operator: boolean; initial?: 
       <div>
         <div className="access-label">
           {operator ? <ShieldCheck size={15} aria-hidden="true" /> : <Globe2 size={15} aria-hidden="true" />}
-          {operator ? 'Operator session' : 'Read-only demo'}
+          {workspaceName ?? (operator ? 'Operator session' : 'Read-only demo')}
         </div>
         <h1 className="page-title mt-3">Webhook deliveries</h1>
-        <p className="muted mt-2">Track synthetic webhook events, inspect delivery attempts, and recover from failures.</p>
+        <p className="muted mt-2">{workspaceName
+          ? 'Monitor deliveries to your destination and replay failed events.'
+          : 'Track synthetic webhook events, inspect delivery attempts, and recover from failures.'}</p>
       </div>
-      {operator && <CreateEventButton />}
+      {operator && (!workspaceName || destination) && <CreateEventButton destination={destination} />}
     </div>
 
     <section aria-label="Delivery status counts" className="summary-grid">
@@ -85,7 +89,7 @@ export function Dashboard({ operator, initial }: { operator: boolean; initial?: 
       {!list && !error && <div className="table-state" role="status">Loading deliveries…</div>}
       {list && (list.items.length
         ? <DeliveryTable items={list.items} />
-        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>No deliveries match this view.</p></div>)}
+        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>{workspaceName && !filter ? 'Send a test event to see your first delivery here.' : 'No deliveries match this view.'}</p></div>)}
       {list && <div className="pagination">
         <span>{list.items.length} {list.items.length === 1 ? 'delivery' : 'deliveries'} · Page {cursors.length}</span>
         <div className="flex gap-2">
@@ -121,6 +125,7 @@ function DeliveryTable({ items }: { items: DeliveryList['items'] }) {
         <td>
           <span className="event-type">{delivery.event.eventType}</span>
           {delivery.historical && <span className="fixture-label">Sample</span>}
+          {delivery.event.isTest && <span className="fixture-label">Test event</span>}
           <div className="mobile-metadata">
             <code>{delivery.id.slice(0, 8)}</code>
             <CopyButton value={delivery.id} label={`Copy delivery ID for ${delivery.event.eventType}`} />

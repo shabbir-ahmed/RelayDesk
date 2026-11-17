@@ -1,5 +1,7 @@
 import { ArrowUpRight, FlaskConical, SquareTerminal } from 'lucide-react'
 import Link from 'next/link'
+import { notFound } from 'next/navigation'
+import { appMode } from '@/server/env'
 import { CopyButton } from '@/components/controls'
 import { modeInfo } from '@/components/presentation'
 import { receiverModes } from '@/shared/delivery'
@@ -16,6 +18,7 @@ const create = [
 const read = 'curl -sS "$APP_ORIGIN/api/deliveries/<delivery-id>"'
 
 export default function DemoGuide() {
+  if (appMode() !== 'demo') notFound()
   return <main className="shell page-content guide-page" id="main">
     <div className="page-heading">
       <div>

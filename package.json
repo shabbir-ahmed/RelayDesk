@@ -22,7 +22,8 @@
     "test:integration": "node scripts/test-runner.mjs integration",
     "test:e2e": "node scripts/test-runner.mjs e2e",
     "verify": "node scripts/test-runner.mjs verify",
-    "smoke": "node --env-file-if-exists=.env scripts/smoke.mjs"
+    "smoke": "node --env-file-if-exists=.env scripts/smoke.mjs",
+    "workspace:create": "node --env-file-if-exists=.env --import tsx scripts/provision-workspace.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

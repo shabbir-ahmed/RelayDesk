@@ -1,18 +1,22 @@
 # RelayDesk
 
-RelayDesk is a portfolio demo for investigating missed webhooks. Submit a synthetic event, watch a separate worker deliver it, inspect errors, and replay a failed delivery while keeping its history.
+RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, inspect delivery attempts in your workspace, and replay failures while keeping their history.
 
-![RelayDesk dashboard with synthetic deliveries](docs/screenshots/dashboard.png)
+![RelayDesk delivery history in demo mode](docs/screenshots/dashboard.png)
 
 [Retry history screenshot](docs/screenshots/retry-history.png) · [Two-minute demo](docs/demo.md) · [Architecture](docs/architecture.md) · [Deployment](docs/deployment.md) · [Verification evidence](STATUS.md)
 
-## Run the packaged app
+## Run the private beta
 
-Prerequisites are Docker with Compose and ports 3000 and 5432 available. Start from the repository root.
+Private mode is the default. Run the web app, worker, and PostgreSQL with Docker Compose, then provision your first workspace and approved destination. The guide includes the environment settings, provisioning command, and event API. [Private beta setup](docs/private-beta.md)
+
+## Run the isolated demo
+
+Use Docker with Compose and a dedicated synthetic database. Set `SESSION_SECRET` in `.env` to a random value of at least 32 characters. Start from the repository root.
 
 ```sh
-cp .env.example .env
-docker compose up --build --wait -d
+test -f .env || cp .env.example .env
+RELAYDESK_MODE=demo docker compose up --build --wait -d
 docker compose run --rm --no-deps web node dist/prisma/seed.js
 curl --fail http://localhost:3000/api/health
 ```
@@ -23,12 +27,12 @@ For alternate host ports, set `WEB_PORT` and `POSTGRES_PORT` in `.env`. Match `A
 
 Use `docker compose logs -f web worker` for process logs and `docker compose down` to stop the app while retaining the database volume.
 
-## Run from source
+## Run the demo from source
 
-Use Node 22.13+ in the 22.x line and npm. The project uses the checked-in npm lockfile. For a first run, create `.env` from the example.
+Use Node 22.13+ in the 22.x line and npm. The project uses the checked-in npm lockfile. For a first run, create `.env` from the example, set `RELAYDESK_MODE=demo`, and generate a `SESSION_SECRET`.
 
 ```sh
-cp .env.example .env
+test -f .env || cp .env.example .env
 npm ci
 npm run db:generate
 docker compose up --wait -d db
@@ -60,9 +64,9 @@ npm run verify
 
 On Linux, use `npx --no-install playwright install --with-deps chromium` to install required system libraries as well. If using an existing PostgreSQL server, create a separate database with a name ending in `_test` and update `TEST_DATABASE_URL`.
 
-`npm run verify` runs lint, strict type checking, unit tests, the production build, disposable migrations, PostgreSQL/HTTP integration tests, and Chromium journeys against the built web and worker. It refuses a test database with the same name as the runtime database and uses only `TEST_DATABASE_URL` for test writes and cleanup. In isolation, `npm run test:integration` and `npm run test:e2e` also build the production app and migrate the test database.
+`npm run verify` runs lint, strict type checking, unit tests, the production build, disposable migrations, PostgreSQL/HTTP integration tests, and demo and private-beta Chromium journeys against the built web and delivery worker. It refuses a test database with the same name as the runtime database and uses only `TEST_DATABASE_URL` for test writes and cleanup. In isolation, `npm run test:integration` and `npm run test:e2e` also build the production app and migrate the test database.
 
-Run `npm run smoke` against a running instance using its `APP_ORIGIN` and `API_TOKEN`. The smoke creates a synthetic delivery and prints its detail URL after it observes HTTP 503, 503, and 200.
+Run `npm run smoke` against a running demo instance using its `APP_ORIGIN` and `API_TOKEN`. The smoke creates a synthetic delivery and prints its detail URL after it observes HTTP 503, 503, and 200.
 
 ## Hosting
 

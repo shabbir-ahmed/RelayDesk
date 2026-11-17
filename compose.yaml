@@ -38,11 +38,12 @@ services:
     <<: *runtime
     environment:
       DATABASE_URL: *database-url
+      RELAYDESK_MODE: ${RELAYDESK_MODE:-private}
       APP_ORIGIN: ${APP_ORIGIN:?Copy .env.example to .env and set APP_ORIGIN}
-      OPERATOR_CREDENTIAL: ${OPERATOR_CREDENTIAL:?Set OPERATOR_CREDENTIAL}
-      SESSION_SECRET: ${SESSION_SECRET:?Set SESSION_SECRET}
-      API_TOKEN: ${API_TOKEN:?Set API_TOKEN}
-      RECEIVER_SECRET: ${RECEIVER_SECRET:?Set RECEIVER_SECRET}
+      OPERATOR_CREDENTIAL: ${OPERATOR_CREDENTIAL:-}
+      SESSION_SECRET: ${SESSION_SECRET:-}
+      API_TOKEN: ${API_TOKEN:-}
+      RECEIVER_SECRET: ${RECEIVER_SECRET:-}
     ports:
       - '127.0.0.1:${WEB_PORT:-3000}:3000'
     depends_on:
@@ -59,8 +60,10 @@ services:
     command: ['node', 'dist/src/worker/main.js']
     environment:
       DATABASE_URL: *database-url
+      RELAYDESK_MODE: ${RELAYDESK_MODE:-private}
+      DESTINATION_SIGNING_KEY: ${DESTINATION_SIGNING_KEY:-}
       RECEIVER_BASE_URL: http://web:3000
-      RECEIVER_SECRET: ${RECEIVER_SECRET:?Set RECEIVER_SECRET}
+      RECEIVER_SECRET: ${RECEIVER_SECRET:-}
     depends_on:
       web:
         condition: service_healthy

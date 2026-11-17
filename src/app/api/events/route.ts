@@ -1,13 +1,17 @@
 import { db } from '@/server/db'
-import { submissionSchema, submitEvent } from '@/server/events'
+import { demoScope } from '@/server/demo'
+import { submissionSchema, submitEvent, submitWorkspaceEvent, workspaceSubmissionSchema } from '@/server/events'
 import { json, parse, readJson, respond } from '@/server/http'
 import { authorizeMutation } from '@/server/operator'
 
 export async function POST(request: Request) {
   return respond(async () => {
-    await authorizeMutation(request, true)
-    const input = parse(submissionSchema, await readJson(request))
-    const { created, ...result } = await submitEvent(db(), input)
-    return json(result, created ? 201 : 200)
+    const scope = await authorizeMutation(request, true)
+    const input = await readJson(request)
+    const result = scope.mode === 'demo'
+      ? await submitEvent(db(), parse(submissionSchema, input), demoScope)
+      : await submitWorkspaceEvent(db(), scope.workspaceId, parse(workspaceSubmissionSchema, input))
+    const { created, ...data } = result
+    return json(data, created ? 201 : 200)
   })
 }

@@ -2,12 +2,11 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import { z } from 'zod'
 import { deliveryStatuses } from '../shared/delivery'
 import { maxAttempts, maxReplayCycles } from '../worker/timing'
-import { workspaceId } from './demo'
 import { invalid, parse } from './http'
 
 const listSelect = {
   id: true, status: true, cycle: true, attemptsInCycle: true, createdAt: true, historical: true,
-  event: { select: { eventType: true } },
+  event: { select: { eventType: true, isTest: true } },
 } satisfies Prisma.DeliverySelect
 
 const cursorSchema = z.tuple([z.iso.datetime(), z.uuid()])
@@ -25,15 +24,15 @@ function decodeCursor(cursor: string) {
   }
 }
 
-const visible = { event: { workspaceId } } satisfies Prisma.DeliveryWhereInput
+const visible = (workspaceId: string) => ({ event: { workspaceId } } satisfies Prisma.DeliveryWhereInput)
 
-export async function listDeliveries(db: PrismaClient, params = new URLSearchParams()) {
+export async function listDeliveries(db: PrismaClient, workspaceId: string, params = new URLSearchParams()) {
   const { status, cursor, limit = 25 } = parse(pageSchema, Object.fromEntries(params))
   const [time, id] = cursor ? decodeCursor(cursor) : []
   const createdAt = time ? new Date(time) : undefined
   const rows = await db.delivery.findMany({
     where: {
-      ...visible,
+      ...visible(workspaceId),
       status,
       ...(createdAt ? { OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }] } : {}),
     },
@@ -48,15 +47,15 @@ export async function listDeliveries(db: PrismaClient, params = new URLSearchPar
   return { items, nextCursor }
 }
 
-export async function deliveryDetail(db: PrismaClient, id: string) {
+export async function deliveryDetail(db: PrismaClient, workspaceId: string, id: string) {
   if (!z.uuid().safeParse(id).success) return null
   const row = await db.delivery.findFirst({
-    where: { ...visible, id },
+    where: { ...visible(workspaceId), id },
     select: {
       ...listSelect,
       receiverMode: true, nextAttemptAt: true, leaseExpiresAt: true,
-      event: { select: { id: true, eventType: true, payload: true, createdAt: true } },
-      endpoint: { select: { name: true } },
+      event: { select: { id: true, eventType: true, payload: true, createdAt: true, isTest: true } },
+      endpoint: { select: { name: true, destinationUrl: true } },
       attempts: {
         orderBy: [{ cycle: 'asc' }, { attemptNumber: 'asc' }],
         take: (1 + maxReplayCycles) * maxAttempts,
@@ -80,11 +79,11 @@ export async function deliveryDetail(db: PrismaClient, id: string) {
   }
 }
 
-export async function deliverySummary(db: PrismaClient) {
+export async function deliverySummary(db: PrismaClient, workspaceId: string) {
   const [groups, latest] = await Promise.all([
-    db.delivery.groupBy({ by: ['status'], where: visible, _count: { _all: true } }),
+    db.delivery.groupBy({ by: ['status'], where: visible(workspaceId), _count: { _all: true } }),
     db.deliveryAttempt.findFirst({
-      where: { completedAt: { not: null }, delivery: visible },
+      where: { completedAt: { not: null }, delivery: visible(workspaceId) },
       orderBy: { completedAt: 'desc' },
       select: { completedAt: true },
     }),

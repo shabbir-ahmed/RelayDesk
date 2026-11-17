@@ -13,7 +13,7 @@ import { useLive } from './use-live'
 
 type Attempt = Detail['attempts'][number]
 
-export function DeliveryDetail({ id, initial, operator }: { id: string; initial: Detail; operator: boolean }) {
+export function DeliveryDetail({ id, initial, operator, demo }: { id: string; initial: Detail; operator: boolean; demo: boolean }) {
   const [revision, setRevision] = useState(0)
   const [replayOpen, setReplayOpen] = useState(false)
   const [replayCycle, setReplayCycle] = useState<number>()
@@ -35,6 +35,7 @@ export function DeliveryDetail({ id, initial, operator }: { id: string; initial:
       <div className="min-w-0">
         <div className="detail-label"><DeliveryBadge status={delivery.status} />
           {delivery.historical && <span className="access-label">Synthetic fixture</span>}
+          {delivery.event.isTest && <span className="access-label">Test event</span>}
         </div>
         <h1 className="page-title mt-3 wrap-break-word">{delivery.event.eventType}</h1>
         <div className="id-group mt-2"><span className="muted text-sm">Delivery</span><code className="wrap-anywhere">{delivery.id}</code>
@@ -47,7 +48,7 @@ export function DeliveryDetail({ id, initial, operator }: { id: string; initial:
     </div>
     {error && <div className="mb-5"><InlineError message={error} /></div>}
     {replayCycle && <p className="confirmation mb-5" role="status">Replay queued as cycle {replayCycle}.</p>}
-    {replayOpen && <ReplayForm delivery={delivery} onClose={() => setReplayOpen(false)} onReplay={(cycle) => {
+    {replayOpen && <ReplayForm demo={demo} delivery={delivery} onClose={() => setReplayOpen(false)} onReplay={(cycle) => {
       setReplayOpen(false)
       setReplayCycle(cycle)
       setRevision((value) => value + 1)
@@ -59,7 +60,10 @@ export function DeliveryDetail({ id, initial, operator }: { id: string; initial:
           <div className="panel-heading"><h2 className="section-title" id="delivery-state">Delivery state</h2></div>
           <dl className="detail-fields">
             <Field label="Endpoint">{delivery.endpoint.name}</Field>
-            <Field label="Receiver mode">{modeInfo[delivery.receiverMode].label}</Field>
+            {demo && <Field label="Receiver mode">{modeInfo[delivery.receiverMode].label}</Field>}
+            {delivery.endpoint.destinationUrl && <Field label="Destination">
+              <code className="wrap-anywhere">{delivery.endpoint.destinationUrl}</code>
+            </Field>}
             <Field label="Current cycle">{delivery.cycle} · {delivery.attemptsInCycle} of {maxAttempts} attempts used</Field>
             <Field label="Manual replays">{replaysUsed} of {maxReplayCycles} used</Field>
             <Field label="Event ID"><div className="id-group">
@@ -88,7 +92,7 @@ export function DeliveryDetail({ id, initial, operator }: { id: string; initial:
         {[...groups].map(([cycle, attempts]) => <div key={cycle} className="timeline-group">
           <h3>Cycle {cycle} <span>{cycle === 1 ? 'Original delivery' : 'Manual replay'}</span></h3>
           <ol>
-            {attempts.map((attempt) => <AttemptItem key={attempt.id} attempt={attempt} />)}
+            {attempts.map((attempt) => <AttemptItem key={attempt.id} attempt={attempt} demo={demo} />)}
           </ol>
         </div>)}
       </section>
@@ -110,7 +114,7 @@ function Field({ label, children }: { label: string; children: ReactNode }) {
   return <div><dt>{label}</dt><dd>{children}</dd></div>
 }
 
-function AttemptItem({ attempt }: { attempt: Attempt }) {
+function AttemptItem({ attempt, demo }: { attempt: Attempt; demo: boolean }) {
   const { label, tone } = attemptInfo[attempt.status]
   return <li className={`attempt tone-${tone}`}>
     <span className="timeline-dot" aria-hidden="true" />
@@ -125,11 +129,11 @@ function AttemptItem({ attempt }: { attempt: Attempt }) {
     </p>
     {attempt.completedAt && <p className="muted mt-1 text-xs">Recorded <Timestamp value={attempt.completedAt} seconds /></p>}
     {attempt.error && <p className="attempt-error">{attempt.error}</p>}
-    <p className="muted mt-1 text-xs">Receiver mode · {modeInfo[attempt.receiverMode].label}</p>
+    {demo && <p className="muted mt-1 text-xs">Receiver mode · {modeInfo[attempt.receiverMode].label}</p>}
   </li>
 }
 
-function ReplayForm({ delivery, onClose, onReplay }: { delivery: Detail; onClose: () => void; onReplay: (cycle: number) => void }) {
+function ReplayForm({ demo, delivery, onClose, onReplay }: { demo: boolean; delivery: Detail; onClose: () => void; onReplay: (cycle: number) => void }) {
   const [receiverMode, setMode] = useState<ReceiverMode>('SUCCEED')
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
@@ -139,7 +143,7 @@ function ReplayForm({ delivery, onClose, onReplay }: { delivery: Detail; onClose
     setBusy(true)
     setError('')
     try {
-      const { cycle } = await post<{ cycle: number }>(`/api/deliveries/${delivery.id}/replay`, { receiverMode })
+      const { cycle } = await post<{ cycle: number }>(`/api/deliveries/${delivery.id}/replay`, demo ? { receiverMode } : {})
       onReplay(cycle)
     } catch (error) {
       setError(errorMessage(error))
@@ -151,7 +155,7 @@ function ReplayForm({ delivery, onClose, onReplay }: { delivery: Detail; onClose
   return <Modal title="Replay delivery" onClose={onClose} busy={busy}>
     <p className="muted mb-5 text-sm">Queue the same event in cycle {delivery.cycle + 1}. Prior attempts stay in the history.</p>
     <form className="space-y-4" onSubmit={submit}>
-      <ModeField id="replay-mode" value={receiverMode} onChange={setMode} disabled={busy} />
+      {demo && <ModeField id="replay-mode" value={receiverMode} onChange={setMode} disabled={busy} />}
       {error && <InlineError message={error} />}
       <div className="modal-actions">
         <button type="button" className="button button-secondary" disabled={busy} onClick={onClose}>Cancel</button>

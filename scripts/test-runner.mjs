@@ -12,7 +12,7 @@ if (!['integration', 'e2e', 'verify'].includes(mode)) throw new Error('Choose in
 const test = testDatabaseUrl()
 
 const env = { ...process.env, DATABASE_URL: test, RELAYDESK_TEST_RUN: '1', NEXT_TELEMETRY_DISABLED: '1' }
-for (const name of ['OPERATOR_CREDENTIAL', 'SESSION_SECRET', 'API_TOKEN', 'RECEIVER_SECRET']) {
+for (const name of ['OPERATOR_CREDENTIAL', 'SESSION_SECRET', 'API_TOKEN', 'RECEIVER_SECRET', 'DESTINATION_SIGNING_KEY']) {
   env[name] = randomBytes(32).toString('hex')
 }
 
@@ -55,16 +55,20 @@ async function stop(child) {
   }
 }
 
-async function withWeb(browserTests) {
+async function withWeb(phase) {
+  env.RELAYDESK_MODE = phase === 'private' ? 'private' : 'demo'
   const web = spawn(process.execPath, ['.next/standalone/server.js'], { env, stdio: 'inherit' })
   let worker
   try {
     await waitForHealth(web)
-    if (browserTests) {
-      worker = spawn(process.execPath, ['dist/src/worker/main.js'], { env, stdio: 'inherit' })
-      run('npx', ['--no-install', 'playwright', 'test'])
-    } else {
+    if (phase === 'integration') {
       run('npx', ['--no-install', 'vitest', 'run', '--no-file-parallelism', 'tests/integration'])
+    } else {
+      if (phase === 'demo') {
+        worker = spawn(process.execPath, ['dist/src/worker/main.js'], { env, stdio: 'inherit' })
+      }
+      const spec = phase === 'demo' ? 'delivery.spec.ts' : 'private-beta.spec.ts'
+      run('npx', ['--no-install', 'playwright', 'test', 'tests/e2e/' + spec])
     }
   } finally {
     await Promise.all([stop(web), stop(worker)])
@@ -82,10 +86,12 @@ async function main() {
   run('npm', ['run', 'build'])
   run('npm', ['run', 'db:migrate'])
 
-  if (mode !== 'e2e') await withWeb(false)
+  if (mode !== 'e2e') await withWeb('integration')
   if (mode !== 'integration') {
-    run(process.execPath, ['--import', 'tsx', 'tests/support/prepare.ts'])
-    await withWeb(true)
+    for (const phase of ['demo', 'private']) {
+      run(process.execPath, ['--import', 'tsx', 'tests/support/prepare.ts'])
+      await withWeb(phase)
+    }
   }
 }
 

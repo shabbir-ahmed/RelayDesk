@@ -1,9 +1,13 @@
 import { db } from '@/server/db'
 import { json, respond } from '@/server/http'
+import { deliveryReadScope } from '@/server/operator'
 import { listDeliveries } from '@/server/reads'
 
 export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
-  return respond(async () => json(await listDeliveries(db(), new URL(request.url).searchParams)))
+  return respond(async () => {
+    const { workspaceId } = await deliveryReadScope()
+    return json(await listDeliveries(db(), workspaceId, new URL(request.url).searchParams))
+  })
 }

@@ -9,10 +9,15 @@ const replaySchema = z.strictObject({ receiverMode: z.enum(receiverModes).option
 
 export async function POST(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
-    await authorizeMutation(request)
+    const scope = await authorizeMutation(request)
     const id = parse(z.uuid(), (await params).id)
     const bytes = await readBytes(request, 2 * 1024)
-    const { receiverMode } = parse(replaySchema, bytes.length ? decodeJson(bytes) : {})
-    return json(await replay(db(), id, receiverMode))
+    const input = bytes.length ? decodeJson(bytes) : {}
+    if (scope.mode === 'demo') {
+      const { receiverMode } = parse(replaySchema, input)
+      return json(await replay(db(), scope.workspaceId, id, receiverMode))
+    }
+    parse(z.strictObject({}), input)
+    return json(await replay(db(), scope.workspaceId, id))
   })
 }

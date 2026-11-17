@@ -5,7 +5,8 @@ import { useState, type FormEvent } from 'react'
 import { errorMessage, post } from './client-http'
 import { InlineError } from './controls'
 
-export function LoginForm() {
+export function LoginForm({ demo }: { demo: boolean }) {
+  const [workspace, setWorkspace] = useState('')
   const router = useRouter()
   const [credential, setCredential] = useState('')
   const [busy, setBusy] = useState(false)
@@ -16,9 +17,13 @@ export function LoginForm() {
     setBusy(true)
     setError('')
     try {
-      await post('/api/operator/login', { credential })
-      router.replace('/')
-      router.refresh()
+      await post('/api/operator/login', demo ? { credential } : { workspace, credential })
+      if (demo) {
+        router.replace('/')
+        router.refresh()
+      } else {
+        window.location.replace('/')
+      }
     } catch (error) {
       setError(errorMessage(error))
       setBusy(false)
@@ -26,8 +31,13 @@ export function LoginForm() {
   }
 
   return <form onSubmit={submit} className="space-y-5">
+    {!demo && <div className="field">
+      <label htmlFor="workspace">Workspace slug</label>
+      <input id="workspace" value={workspace} autoComplete="username" autoCapitalize="none" maxLength={60}
+        required onChange={(event) => setWorkspace(event.target.value)} disabled={busy} />
+    </div>}
     <div className="field">
-      <label htmlFor="credential">Operator credential</label>
+      <label htmlFor="credential">{demo ? 'Operator credential' : 'Workspace access code'}</label>
       <input id="credential" type="password" value={credential} autoComplete="current-password" maxLength={256} required
         onChange={(event) => setCredential(event.target.value)} disabled={busy} />
     </div>
