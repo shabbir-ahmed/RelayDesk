@@ -1,6 +1,6 @@
 'use client'
 
-import { BookOpen, KeyRound, List, LogIn, LogOut, Webhook } from 'lucide-react'
+import { Bell, BookOpen, KeyRound, List, LogIn, LogOut, Webhook } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
@@ -44,7 +44,11 @@ export function Navigation({ operator, demo }: { operator: boolean; demo: boolea
         </Link> : <>
           <Link href="/destinations" className={`nav-link ${pathname === '/destinations' ? 'nav-selected' : ''}`}
             aria-current={pathname === '/destinations' ? 'page' : undefined}>
-            <Webhook size={16} aria-hidden="true" /> Destination
+            <Webhook size={16} aria-hidden="true" /> Destinations
+          </Link>
+          <Link href="/operations" className={`nav-link ${pathname === '/operations' ? 'nav-selected' : ''}`}
+            aria-current={pathname === '/operations' ? 'page' : undefined}>
+            <Bell size={16} aria-hidden="true" /> Operations
           </Link>
           <Link href="/keys" className={`nav-link ${pathname === '/keys' ? 'nav-selected' : ''}`}
             aria-current={pathname === '/keys' ? 'page' : undefined}>

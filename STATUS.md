@@ -69,3 +69,10 @@
 - `npm run verify` passed lint, type checking, the production build, 33 unit tests, 14 PostgreSQL integration tests, and three Chromium journeys. The beta journey used two workspaces and a local HTTPS receiver that verified signatures, rejected an initial test event, and accepted its replay. It also verified cross-workspace denials and API key revocation.
 - Migration `20261118000200_private_beta` applied to the disposable test database and matched the Prisma schema. An isolated Docker stack verified fresh migrations, startup, compiled workspace provisioning, and private sign-in. The existing local Docker project was kept available.
 - Local setup and credential requirements are in [Private beta](docs/private-beta.md).
+
+## Private beta · Phase 2
+
+- Added multiple approved destinations, exact and wildcard subscriptions, idempotent fan-out, delivery search, an in-app failure inbox, and a workspace audit log.
+- `npm run verify` passed lint, type checking, the production build, 33 unit tests, 17 PostgreSQL integration tests, and three Chromium journeys against disposable native PostgreSQL. The private browser journey covered subscription changes, signed fan-out to multiple endpoints, search, replay and alert acknowledgment, and cross-workspace denials.
+- A separate Phase 1 upgrade fixture retained existing deliveries and attempt history, kept the existing destination on its catch-all subscription, and backfilled its terminal failure alert. Prisma reported no schema drift. The compiled approval command also created a second destination and an audit entry on the disposable upgrade database.
+- The [private beta guide](docs/private-beta.md) covers the schema upgrade, destination approval, and daily operations.

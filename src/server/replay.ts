@@ -1,6 +1,8 @@
 import type { PrismaClient } from '@prisma/client'
 import type { ReceiverMode } from '../shared/delivery'
 import { maxReplayCycles } from '../worker/timing'
+import { recordAudit } from './audit'
+import { demoScope } from './demo'
 import { ApiError, missingDelivery } from './http'
 
 export async function replay(db: PrismaClient, workspaceId: string, id: string, receiverMode?: ReceiverMode) {
@@ -15,7 +17,12 @@ export async function replay(db: PrismaClient, workspaceId: string, id: string, 
       },
       select: { id: true, cycle: true, status: true },
     })
-    if (queued) return queued
+    if (queued) {
+      if (workspaceId !== demoScope.workspaceId) {
+        await recordAudit(tx, workspaceId, 'DELIVERY_REPLAYED', id, `Workspace operator queued replay cycle ${queued.cycle}.`)
+      }
+      return queued
+    }
     const delivery = await tx.delivery.findFirst({ where, select: { status: true, cycle: true } })
     if (!delivery) throw missingDelivery()
     const message = delivery.status === 'FAILED' && delivery.cycle > maxReplayCycles

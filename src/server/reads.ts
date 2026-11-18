@@ -2,49 +2,46 @@ import { Prisma, type PrismaClient } from '@prisma/client'
 import { z } from 'zod'
 import { deliveryStatuses } from '../shared/delivery'
 import { maxAttempts, maxReplayCycles } from '../worker/timing'
-import { invalid, parse } from './http'
+import { countOpenAlerts } from './alerts'
+import { demoScope } from './demo'
+import { parse } from './http'
+import { newestFirst, pageBoundary, pageResult, pageSchema } from './paging'
 
 const listSelect = {
   id: true, status: true, cycle: true, attemptsInCycle: true, createdAt: true, historical: true,
   event: { select: { eventType: true, isTest: true } },
+  endpoint: { select: { id: true, name: true } },
 } satisfies Prisma.DeliverySelect
 
-const cursorSchema = z.tuple([z.iso.datetime(), z.uuid()])
-const pageSchema = z.object({
+const deliveryQuery = pageSchema.extend({
   status: z.enum(deliveryStatuses).optional(),
-  cursor: z.string().min(1).max(120).regex(/^[A-Za-z0-9_-]+$/).optional(),
-  limit: z.string().regex(/^\d{1,2}$/).transform(Number).pipe(z.number().int().min(1).max(50)).optional(),
+  destination: z.uuid().optional(),
+  query: z.string().trim().max(100).refine((value) => !value.includes('\u0000') && value.isWellFormed()).optional(),
 })
 
-function decodeCursor(cursor: string) {
-  try {
-    return cursorSchema.parse(JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8')))
-  } catch {
-    throw invalid('Use a cursor returned by the deliveries endpoint.')
+function search(query?: string): Prisma.DeliveryWhereInput {
+  if (!query) return {}
+  const eventType = query.replace(/[\\%_]/g, '\\$&')
+  const uuid = z.uuid().safeParse(query)
+  return {
+    OR: [
+      { event: { eventType: { contains: eventType, mode: 'insensitive' } } },
+      ...(uuid.success ? [{ id: uuid.data }, { eventId: uuid.data }] : []),
+    ],
   }
 }
 
 const visible = (workspaceId: string) => ({ event: { workspaceId } } satisfies Prisma.DeliveryWhereInput)
 
 export async function listDeliveries(db: PrismaClient, workspaceId: string, params = new URLSearchParams()) {
-  const { status, cursor, limit = 25 } = parse(pageSchema, Object.fromEntries(params))
-  const [time, id] = cursor ? decodeCursor(cursor) : []
-  const createdAt = time ? new Date(time) : undefined
+  const { status, cursor, limit = 25, destination, query } = parse(deliveryQuery, Object.fromEntries(params))
   const rows = await db.delivery.findMany({
-    where: {
-      ...visible(workspaceId),
-      status,
-      ...(createdAt ? { OR: [{ createdAt: { lt: createdAt } }, { createdAt, id: { lt: id } }] } : {}),
-    },
-    orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+    where: { ...visible(workspaceId), status, endpointId: destination, AND: [pageBoundary(cursor), search(query)] },
+    orderBy: newestFirst,
     take: limit + 1,
     select: listSelect,
   })
-  const items = rows.slice(0, limit).map((row) => ({ ...row, createdAt: row.createdAt.toISOString() }))
-  const last = items.at(-1)
-  const nextCursor = rows.length > limit && last
-    ? Buffer.from(JSON.stringify([last.createdAt, last.id])).toString('base64url') : null
-  return { items, nextCursor }
+  return pageResult(rows, limit)
 }
 
 export async function deliveryDetail(db: PrismaClient, workspaceId: string, id: string) {
@@ -80,17 +77,18 @@ export async function deliveryDetail(db: PrismaClient, workspaceId: string, id: 
 }
 
 export async function deliverySummary(db: PrismaClient, workspaceId: string) {
-  const [groups, latest] = await Promise.all([
+  const [groups, latest, openAlerts] = await Promise.all([
     db.delivery.groupBy({ by: ['status'], where: visible(workspaceId), _count: { _all: true } }),
     db.deliveryAttempt.findFirst({
       where: { completedAt: { not: null }, delivery: visible(workspaceId) },
       orderBy: { completedAt: 'desc' },
       select: { completedAt: true },
     }),
+    workspaceId === demoScope.workspaceId ? 0 : countOpenAlerts(db, workspaceId),
   ])
   const counts = { PENDING: 0, PROCESSING: 0, DELIVERED: 0, FAILED: 0 }
   for (const group of groups) counts[group.status] = group._count._all
-  return { counts, latestCompletionAt: latest?.completedAt?.toISOString() ?? null }
+  return { counts, openAlerts, latestCompletionAt: latest?.completedAt?.toISOString() ?? null }
 }
 
 export type DeliveryList = Awaited<ReturnType<typeof listDeliveries>>

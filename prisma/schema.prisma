@@ -28,32 +28,42 @@ enum ReceiverMode {
   TIMEOUT
 }
 
+enum AuditAction {
+  WORKSPACE_CREATED
+  DESTINATION_APPROVED
+  SUBSCRIPTIONS_UPDATED
+  DELIVERY_REPLAYED
+  API_KEY_CREATED
+  API_KEY_REVOKED
+}
+
 model Workspace {
   id               String     @id @default(uuid()) @db.Uuid
   name             String
   slug             String?    @unique @db.VarChar(60)
   credentialDigest String?    @db.Char(64)
-  endpoint         Endpoint?
+  endpoints        Endpoint[]
   events           Event[]
   apiKeys          ApiKey[]
+  auditEntries     AuditEntry[]
 }
 
 model Endpoint {
   id          String     @id @default(uuid()) @db.Uuid
-  workspaceId String     @unique @db.Uuid
+  workspaceId String     @db.Uuid
   workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name        String
   destinationUrl String?  @db.VarChar(2048)
-  events      Event[]
+  eventTypes  String[]   @default([])
   deliveries  Delivery[]
+
+  @@unique([workspaceId, destinationUrl])
 }
 
 model Event {
   id                 String     @id @default(uuid()) @db.Uuid
   workspaceId        String     @db.Uuid
   workspace          Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  endpointId         String     @db.Uuid
-  endpoint           Endpoint   @relation(fields: [endpointId], references: [id], onDelete: Restrict)
   eventType          String     @db.VarChar(80)
   payload            Json
   canonicalBody      String
@@ -96,11 +106,38 @@ model Delivery {
   createdAt            DateTime          @default(now()) @db.Timestamptz(3)
   updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
   attempts             DeliveryAttempt[]
+  alerts               FailureAlert[]
 
   @@unique([eventId, endpointId])
   @@index([status, nextAttemptAt, id])
   @@index([status, leaseExpiresAt])
   @@index([createdAt, id])
+}
+
+model FailureAlert {
+  id             String    @id @default(uuid()) @db.Uuid
+  deliveryId     String    @db.Uuid
+  delivery       Delivery  @relation(fields: [deliveryId], references: [id], onDelete: Restrict)
+  cycle          Int
+  reason         String    @db.VarChar(160)
+  createdAt      DateTime  @default(now()) @db.Timestamptz(3)
+  acknowledgedAt DateTime? @db.Timestamptz(3)
+
+  @@unique([deliveryId, cycle])
+  @@index([acknowledgedAt, createdAt, id])
+}
+
+model AuditEntry {
+  id          String      @id @default(uuid()) @db.Uuid
+  workspaceId String      @db.Uuid
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  action      AuditAction
+  targetId    String      @db.Uuid
+  summary     String      @db.VarChar(240)
+  eventTypes  String[]    @default([])
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+
+  @@index([workspaceId, createdAt, id])
 }
 
 model DeliveryAttempt {

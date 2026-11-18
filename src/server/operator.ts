@@ -93,3 +93,9 @@ export async function authorizeMutation(request: Request, allowApiToken = false)
   requireOrigin(request, config)
   return scope
 }
+
+export async function privateSession() {
+  const scope = await operatorSession()
+  if (scope?.mode !== 'private') throw unauthorized()
+  return scope
+}

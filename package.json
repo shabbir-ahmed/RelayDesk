@@ -23,7 +23,8 @@
     "test:e2e": "node scripts/test-runner.mjs e2e",
     "verify": "node scripts/test-runner.mjs verify",
     "smoke": "node --env-file-if-exists=.env scripts/smoke.mjs",
-    "workspace:create": "node --env-file-if-exists=.env --import tsx scripts/provision-workspace.ts"
+    "workspace:create": "node --env-file-if-exists=.env --import tsx scripts/provision-workspace.ts",
+    "destination:approve": "node --env-file-if-exists=.env --import tsx scripts/approve-destination.ts"
   },
   "dependencies": {
     "@prisma/client": "6.19.3",

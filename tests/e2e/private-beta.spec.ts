@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
 import { demoScope } from '../../src/server/demo'
 import { submitEvent } from '../../src/server/events'
-import { destinationSecret, provisionWorkspace } from '../../src/server/workspaces'
+import { approveDestination, destinationSecret, provisionWorkspace } from '../../src/server/workspaces'
 import { runWorker } from '../../src/worker/run'
 import { sendApproved } from '../../src/worker/send-approved'
 import { betaReceiver } from '../support/beta-receiver'
@@ -29,8 +29,11 @@ test('private workspaces deliver signed HTTPS events, isolate history and revoke
   const beta = await provisionWorkspace(database, {
     slug: 'beta-' + randomUUID().slice(0, 8), name: 'Beta Workspace', url: 'https://beta.receiver.test/beta',
   })
-  await expect(database.endpoint.create({
-    data: { workspaceId: alpha.id, name: 'Second destination', destinationUrl: 'https://beta.receiver.test/alpha' },
+  const extra = await approveDestination(database, {
+    slug: alpha.slug!, name: 'Billing destination', url: 'https://alpha.receiver.test/extra',
+  })
+  await expect(approveDestination(database, {
+    slug: alpha.slug!, name: 'Duplicate', url: 'https://alpha.receiver.test/alpha',
   })).rejects.toMatchObject({ code: 'P2002' })
   const demo = await submitEvent(database, {
     eventType: 'demo.private-boundary', payload: {}, idempotencyKey: randomUUID(), receiverMode: 'SUCCEED',
@@ -38,6 +41,7 @@ test('private workspaces deliver signed HTTPS events, isolate history and revoke
   const receiver = await betaReceiver(new Map([
     ['/alpha', destinationSecret(signingKey, alpha.endpoint!.id)],
     ['/beta', destinationSecret(signingKey, beta.endpoint!.id)],
+    ['/extra', destinationSecret(signingKey, extra.id)],
   ]))
   const stop = new AbortController()
   const worker = runWorker(database, 'private', (claim) => sendApproved(claim, signingKey, receiver.transport), stop.signal)
@@ -55,15 +59,23 @@ test('private workspaces deliver signed HTTPS events, isolate history and revoke
 
     await signIn(page, alpha.slug!, alpha.credential)
     await expect(page.getByText('Alpha Workspace')).toBeVisible()
-    await page.getByRole('link', { name: 'Destination' }).click()
+    await page.getByRole('link', { name: 'Destinations' }).click()
     await expect(page.getByText('https://alpha.receiver.test/alpha')).toBeVisible()
-    await page.getByRole('button', { name: 'Send test event' }).click()
+    const extraCard = page.getByRole('region', { name: 'Billing destination' })
+    await extraCard.getByLabel('Event types').fill('invoice.paid')
+    await extraCard.getByRole('button', { name: 'Save subscriptions' }).click()
+    await expect(extraCard.getByText('Subscriptions saved.')).toBeVisible()
+    await page.getByRole('region', { name: 'Approved destination' }).getByRole('button', { name: 'Send test event' }).click()
     await page.getByRole('button', { name: 'Send test', exact: true }).click()
     await expect(page.getByRole('heading', { name: 'relaydesk.test' })).toBeVisible()
     await expect(page.getByText('HTTP 422', { exact: true })).toBeVisible()
     await expect(page.getByText('Test event', { exact: true })).toBeVisible()
     const path = new URL(page.url()).pathname
     expect((await request.get('/api' + path)).status()).toBe(401)
+    expect((await request.get('/api/alerts')).status()).toBe(401)
+    expect((await request.get('/api/audit')).status()).toBe(401)
+    const { items: [alert] } = await (await page.request.get('/api/alerts')).json()
+    expect(alert.cycle).toBe(1)
 
     await signIn(betaPage, beta.slug!, beta.credential)
     await expect(betaPage.getByText('Beta Workspace')).toBeVisible()
@@ -73,6 +85,12 @@ test('private workspaces deliver signed HTTPS events, isolate history and revoke
     expect((await betaPage.request.get('/api/deliveries')).ok()).toBe(true)
     expect((await (await betaPage.request.get('/api/deliveries')).json()).items).toEqual([])
     expect((await (await betaPage.request.get('/api/summary')).json()).counts.FAILED).toBe(0)
+
+    expect((await betaPage.request.put(`/api/destinations/${extra.id}/subscriptions`, {
+      headers: mutation, data: { eventTypes: ['*'] },
+    })).status()).toBe(404)
+    expect((await betaPage.request.post('/api/alerts/' + alert.id + '/acknowledge', { headers: mutation })).status()).toBe(404)
+    expect((await (await betaPage.request.get('/api/alerts?view=all')).json()).items).toEqual([])
 
     await page.getByRole('button', { name: 'Replay delivery' }).click()
     await page.getByRole('button', { name: 'Queue replay' }).click()
@@ -103,17 +121,33 @@ test('private workspaces deliver signed HTTPS events, isolate history and revoke
     })
     expect((await page.request.post('/api/events', { headers: mutation, data: sample })).status()).toBe(401)
     expect((await send(token, { ...sample, destinationUrl: 'https://beta.receiver.test/beta' })).status()).toBe(400)
-    expect((await send(token)).status()).toBe(201)
+    const accepted = await send(token)
+    expect(accepted.status()).toBe(201)
+    expect((await accepted.json()).deliveryIds).toHaveLength(2)
     expect((await send(token)).status()).toBe(200)
     expect((await send(betaKey.token)).status()).toBe(201)
     expect((await request.get('/api/deliveries', { headers: { authorization: 'Bearer ' + token } })).status()).toBe(401)
-    await expect.poll(() => receiver.messages.slice(2).map(({ path }) => path).sort()).toEqual(['/alpha', '/beta'])
-    expect(receiver.messages.slice(2).map(({ body }) => JSON.parse(body).test)).toEqual([undefined, undefined])
+    await expect.poll(() => receiver.messages.slice(2).map(({ path }) => path).sort()).toEqual(['/alpha', '/beta', '/extra'])
+    expect(receiver.messages.slice(2).map(({ body }) => JSON.parse(body).test)).toEqual([undefined, undefined, undefined])
 
     await page.getByRole('button', { name: 'Revoke Integration' }).click()
     await page.getByRole('button', { name: 'Revoke key' }).click()
     await expect(page.getByText('Create a key when you’re ready to connect an application.')).toBeVisible()
     expect((await send(token)).status()).toBe(401)
+    await page.getByRole('link', { name: 'Deliveries', exact: true }).click()
+    await page.getByLabel('Search deliveries').fill('INVOICE')
+    await page.getByRole('button', { name: 'Search', exact: true }).click()
+    await expect(page.getByRole('row', { name: /invoice.paid/ })).toHaveCount(2)
+    await page.getByLabel('Destination', { exact: true }).selectOption(extra.id)
+    await expect(page.getByRole('row', { name: /invoice.paid/ })).toHaveCount(1)
+
+    await page.getByRole('link', { name: 'Operations' }).click()
+    await expect(page.getByRole('region', { name: 'Audit log' }).getByText('Workspace operator queued replay cycle 2.')).toBeVisible()
+    await expect(page.getByText('Workspace operator subscribed Billing destination to 1 event type.')).toBeVisible()
+    await page.getByRole('button', { name: 'Acknowledge', exact: true }).click()
+    await expect(page.getByText('No open failure alerts.')).toBeVisible()
+    await page.getByLabel('Show alerts').selectOption('all')
+    await expect(page.getByText('Acknowledged', { exact: false })).toBeVisible()
     await page.getByRole('button', { name: 'Sign out' }).click()
     await expect(page.getByRole('heading', { name: 'Sign in to your workspace' })).toBeVisible()
     expect((await page.request.get('/api' + path)).status()).toBe(401)

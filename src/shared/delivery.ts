@@ -5,3 +5,5 @@ export type ReceiverMode = (typeof receiverModes)[number]
 export type DeliveryStatus = (typeof deliveryStatuses)[number]
 
 export const receiverPath = '/api/demo/receiver'
+
+export type DestinationOption = { id: string; name: string; destinationUrl: string | null }

@@ -53,7 +53,7 @@ function fixture(index: number) {
   const status: DeliveryStatus = last.status === 'SUCCEEDED' ? 'DELIVERED' : 'FAILED'
   return {
     event: {
-      id: eventId, workspaceId, endpointId, eventType, createdAt, payload,
+      id: eventId, workspaceId, eventType, createdAt, payload,
       idempotencyKey: `relaydesk.seed.history.${index}`,
       canonicalBody: eventBody({ id: eventId, eventType, payload, createdAt }),
       requestFingerprint: fingerprint({ eventType, payload, receiverMode: attempts[0].receiverMode }),

@@ -1,6 +1,6 @@
 # RelayDesk
 
-RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, inspect delivery attempts in your workspace, and replay failures while keeping their history.
+RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, route it by subscription, and use private delivery history, failure alerts, and replay to recover from errors.
 
 ![RelayDesk delivery history in demo mode](docs/screenshots/dashboard.png)
 
