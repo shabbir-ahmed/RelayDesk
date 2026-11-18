@@ -2,7 +2,9 @@
 
 RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, route it by subscription, and use private delivery history, failure alerts, and replay to recover from errors.
 
-![RelayDesk delivery history in demo mode](docs/screenshots/dashboard.png)
+![RelayDesk dashboard showing delivery status, daily usage, and a failure alert in a sample workspace](docs/screenshots/dashboard.png)
+
+![Webhook data flow from the event API through the PostgreSQL queue and delivery worker to an approved HTTPS endpoint, with delivery history, retries, and replay](docs/screenshots/data-flow.png)
 
 [Retry history screenshot](docs/screenshots/retry-history.png) · [Two-minute demo](docs/demo.md) · [Architecture](docs/architecture.md) · [Deployment](docs/deployment.md) · [Verification evidence](STATUS.md)
 
