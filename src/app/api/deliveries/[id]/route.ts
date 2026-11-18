@@ -5,10 +5,10 @@ import { deliveryDetail } from '@/server/reads'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET(_request: Request, { params }: { params: Promise<{ id: string }> }) {
+export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   return respond(async () => {
-    const { workspaceId } = await deliveryReadScope()
-    const result = await deliveryDetail(db(), workspaceId, (await params).id)
+    const { workspaceId, environment } = await deliveryReadScope(request)
+    const result = await deliveryDetail(db(), workspaceId, (await params).id, environment)
     if (!result) throw missingDelivery()
     return json(result)
   })

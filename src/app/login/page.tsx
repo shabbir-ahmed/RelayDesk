@@ -18,8 +18,9 @@ export default async function Login() {
         <h1 className="page-title mb-2">{demo ? 'Operator login' : 'Sign in to your workspace'}</h1>
         <p className="muted mb-6">{demo
           ? 'Sign in to submit synthetic events and replay failed deliveries.'
-          : 'Enter the workspace slug and access code from your RelayDesk administrator.'}</p>
+          : 'Enter your workspace slug and credentials.'}</p>
         <LoginForm demo={demo} />
+        {!demo && <p className="muted mt-5 text-sm">New to RelayDesk? <Link className="table-link" href="/signup">Create a workspace</Link></p>}
       </div>
     </div>
   </main>

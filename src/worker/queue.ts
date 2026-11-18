@@ -51,14 +51,16 @@ export type Claim = NonNullable<Awaited<ReturnType<typeof claimNext>>>
 
 async function release(
   tx: Prisma.TransactionClient, id: string, now: Date, delivered: boolean, nextAttemptAt: Date | null,
+  failure?: { cycle: number; reason: string },
 ) {
+  const status = delivered ? 'DELIVERED' : nextAttemptAt ? 'PENDING' : 'FAILED'
   await tx.delivery.update({
     where: { id },
-    data: {
-      status: delivered ? 'DELIVERED' : nextAttemptAt ? 'PENDING' : 'FAILED',
-      leaseToken: null, leaseExpiresAt: null, nextAttemptAt, updatedAt: now,
-    },
+    data: { status, leaseToken: null, leaseExpiresAt: null, nextAttemptAt, updatedAt: now },
   })
+  if (status === 'FAILED' && failure) {
+    await tx.failureAlert.create({ data: { deliveryId: id, ...failure, createdAt: now } })
+  }
 }
 
 export async function finalize(db: PrismaClient, claim: Claim, outcome: Outcome) {
@@ -86,7 +88,10 @@ export async function finalize(db: PrismaClient, claim: Claim, outcome: Outcome)
       },
     })
     const next = outcome.kind === 'retry' ? retryAt(now, claim.attemptsInCycle) : null
-    await release(tx, claim.id, now, succeeded, next)
+    const failure = !succeeded && claim.endpoint.destinationUrl !== null
+      ? { cycle: claim.cycle, reason: outcome.error }
+      : undefined
+    await release(tx, claim.id, now, succeeded, next, failure)
     return true
   })
 }
@@ -119,7 +124,10 @@ export async function recoverExpired(db: PrismaClient, mode: AppMode = 'demo') {
           error: 'Worker lease expired. The receiver may have processed this request.',
         },
       })
-      await release(tx, row.id, now, false, retryAt(now, row.attemptsInCycle))
+      const failure = mode === 'private'
+        ? { cycle: row.cycle, reason: 'The worker lease expired on the last allowed attempt.' }
+        : undefined
+      await release(tx, row.id, now, false, retryAt(now, row.attemptsInCycle), failure)
     }
     return rows.length
   })

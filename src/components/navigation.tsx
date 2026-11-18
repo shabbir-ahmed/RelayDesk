@@ -1,13 +1,14 @@
 'use client'
 
-import { BookOpen, KeyRound, List, LogIn, LogOut, Webhook } from 'lucide-react'
+import { Bell, BookOpen, KeyRound, List, LogIn, LogOut, Users, Webhook } from 'lucide-react'
 import Link from 'next/link'
 import { usePathname, useRouter } from 'next/navigation'
 import { useState } from 'react'
+import { environmentLabel, type Environment } from '@/shared/delivery'
 import { errorMessage, post } from './client-http'
 import { InlineError } from './controls'
 
-export function Navigation({ operator, demo }: { operator: boolean; demo: boolean }) {
+export function Navigation({ operator, demo, environment }: { operator: boolean; demo: boolean; environment?: Environment }) {
   const pathname = usePathname()
   const router = useRouter()
   const [busy, setBusy] = useState(false)
@@ -29,6 +30,19 @@ export function Navigation({ operator, demo }: { operator: boolean; demo: boolea
     }
   }
 
+  async function selectEnvironment(value: Environment) {
+    setBusy(true)
+    setError('')
+    try {
+      await post('/api/environment', { environment: value })
+      if (pathname.startsWith('/deliveries/')) window.location.replace('/')
+      else window.location.reload()
+    } catch (error) {
+      setError(errorMessage(error))
+      setBusy(false)
+    }
+  }
+
   return <header className="site-header">
     <div className="site-nav shell">
       <Link href="/" aria-label="RelayDesk home" className="brand">
@@ -44,14 +58,30 @@ export function Navigation({ operator, demo }: { operator: boolean; demo: boolea
         </Link> : <>
           <Link href="/destinations" className={`nav-link ${pathname === '/destinations' ? 'nav-selected' : ''}`}
             aria-current={pathname === '/destinations' ? 'page' : undefined}>
-            <Webhook size={16} aria-hidden="true" /> Destination
+            <Webhook size={16} aria-hidden="true" /> Destinations
+          </Link>
+          <Link href="/operations" className={`nav-link ${pathname === '/operations' ? 'nav-selected' : ''}`}
+            aria-current={pathname === '/operations' ? 'page' : undefined}>
+            <Bell size={16} aria-hidden="true" /> Operations
           </Link>
           <Link href="/keys" className={`nav-link ${pathname === '/keys' ? 'nav-selected' : ''}`}
             aria-current={pathname === '/keys' ? 'page' : undefined}>
             <KeyRound size={16} aria-hidden="true" /> API keys
           </Link>
+          <Link href="/team" className={`nav-link ${pathname === '/team' ? 'nav-selected' : ''}`}
+            aria-current={pathname === '/team' ? 'page' : undefined}>
+            <Users size={16} aria-hidden="true" /> Team
+          </Link>
         </>}
       </nav>}
+      {environment && <div className="field">
+        <label className="sr-only" htmlFor="workspace-environment">Environment</label>
+        <select id="workspace-environment" value={environment} disabled={busy}
+          onChange={(event) => selectEnvironment(event.target.value as Environment)}>
+          <option value="TEST">{environmentLabel.TEST}</option>
+          <option value="LIVE">{environmentLabel.LIVE}</option>
+        </select>
+      </div>}
       {operator
         ? <button type="button" onClick={logout} disabled={busy} className="button button-secondary nav-account">
             <LogOut size={16} aria-hidden="true" /> {busy ? 'Signing out…' : 'Sign out'}

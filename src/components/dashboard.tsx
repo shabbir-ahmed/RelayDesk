@@ -1,10 +1,10 @@
 'use client'
 
-import { ArrowUpRight, ChevronLeft, ChevronRight, Globe2, Inbox, ShieldCheck } from 'lucide-react'
+import { ArrowUpRight, Bell, ChevronLeft, ChevronRight, Globe2, Inbox, ShieldCheck } from 'lucide-react'
 import Link from 'next/link'
-import { useCallback, useState } from 'react'
+import { useCallback, useId, useState } from 'react'
 import type { DeliveryList, DeliverySummary } from '@/server/reads'
-import { deliveryStatuses, type DeliveryStatus } from '@/shared/delivery'
+import { deliveryStatuses, type DeliveryStatus, type DestinationOption, type Environment } from '@/shared/delivery'
 import { requestJson } from './client-http'
 import { CopyButton, InlineError } from './controls'
 import { CreateEventButton } from './event-form'
@@ -13,15 +13,21 @@ import { useLive } from './use-live'
 
 type DashboardData = { list: DeliveryList; summary: DeliverySummary | null }
 
-export function Dashboard({ operator, initial, workspaceName, destination }: {
-  operator: boolean; initial?: DashboardData; workspaceName?: string; destination?: string | null
+export function Dashboard({ operator, initial, workspaceName, destinations, environment }: {
+  operator: boolean; initial?: DashboardData; environment: Environment; workspaceName?: string; destinations?: DestinationOption[]
 }) {
   const [filter, setFilter] = useState<DeliveryStatus | ''>('')
+  const [destination, setDestination] = useState('')
+  const [draft, setDraft] = useState('')
+  const [search, setSearch] = useState('')
+  const searchId = useId()
   const [cursors, setCursors] = useState<(string | null)[]>([null])
   const [revision, setRevision] = useState(0)
   const cursor = cursors.at(-1)
   const params = new URLSearchParams()
   if (filter) params.set('status', filter)
+  if (destination) params.set('destination', destination)
+  if (search) params.set('query', search)
   if (cursor) params.set('cursor', cursor)
   const query = params.toString()
   const load = useCallback(async (signal: AbortSignal) => {
@@ -33,6 +39,8 @@ export function Dashboard({ operator, initial, workspaceName, destination }: {
   }, [query])
   const { data, error } = useLive(query, load, initial, revision)
   const latest = data?.summary?.latestCompletionAt
+  const openAlerts = data?.summary?.openAlerts ?? 0
+  const usage = data?.summary?.usage
   const list = data?.list
 
   return <main className="shell page-content" id="main">
@@ -44,11 +52,24 @@ export function Dashboard({ operator, initial, workspaceName, destination }: {
         </div>
         <h1 className="page-title mt-3">Webhook deliveries</h1>
         <p className="muted mt-2">{workspaceName
-          ? 'Monitor deliveries to your destination and replay failed events.'
+          ? 'Monitor deliveries to your destinations and replay failed events.'
           : 'Track synthetic webhook events, inspect delivery attempts, and recover from failures.'}</p>
       </div>
-      {operator && (!workspaceName || destination) && <CreateEventButton destination={destination} />}
+      {operator && (!destinations || (environment === 'TEST' && destinations.length > 0)) && <CreateEventButton destinations={destinations} />}
     </div>
+
+    {usage && <section aria-labelledby="event-usage" className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
+      <div>
+        <h2 id="event-usage" className="font-semibold">Daily event usage</h2>
+        <p className="muted text-sm">{usage.used.toLocaleString()} of {usage.limit.toLocaleString()} · Resets at midnight UTC</p>
+      </div>
+      <progress aria-label="Daily event usage" className="w-44 max-w-full accent-indigo-600"
+        value={Math.min(usage.used, usage.limit)} max={usage.limit} />
+    </section>}
+
+    {workspaceName && openAlerts > 0 && <Link href="/operations" className="panel mb-4 flex items-center gap-2 p-4 font-semibold text-indigo-700">
+      <Bell size={17} aria-hidden="true" /> {openAlerts} open failure {openAlerts === 1 ? 'alert' : 'alerts'}
+    </Link>}
 
     <section aria-label="Delivery status counts" className="summary-grid">
       {deliveryStatuses.map((status) => {
@@ -82,14 +103,43 @@ export function Dashboard({ operator, initial, workspaceName, destination }: {
           </select>
         </div>
       </div>
+      {destinations && <div className="flex flex-wrap items-end gap-4 px-5 pb-4">
+        <form className="flex min-w-0 flex-1 flex-wrap items-end gap-2" role="search" onSubmit={(event) => {
+          event.preventDefault()
+          setSearch(draft.trim())
+          setCursors([null])
+        }}>
+          <div className="field min-w-0 flex-1">
+            <label htmlFor={searchId}>Search deliveries</label>
+            <input id={searchId} type="search" placeholder="Event type or full ID" maxLength={100}
+              value={draft} onChange={(event) => setDraft(event.target.value)} />
+          </div>
+          <button className="button button-secondary" type="submit">Search</button>
+          {search && <button className="button button-secondary" type="button" onClick={() => {
+            setDraft('')
+            setSearch('')
+            setCursors([null])
+          }}>Clear search</button>}
+        </form>
+        <div className="field">
+          <label htmlFor="destination-filter">Destination</label>
+          <select id="destination-filter" value={destination} onChange={(event) => {
+            setDestination(event.target.value)
+            setCursors([null])
+          }}>
+            <option value="">All destinations</option>
+            {destinations.map(({ id, name }) => <option key={id} value={id}>{name}</option>)}
+          </select>
+        </div>
+      </div>}
       {error && <div className="px-5 pb-4">
         <InlineError message={error} />
         <button type="button" className="button button-secondary button-small mt-2" onClick={() => setRevision((value) => value + 1)}>Refresh</button>
       </div>}
       {!list && !error && <div className="table-state" role="status">Loading deliveries…</div>}
       {list && (list.items.length
-        ? <DeliveryTable items={list.items} />
-        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>{workspaceName && !filter ? 'Send a test event to see your first delivery here.' : 'No deliveries match this view.'}</p></div>)}
+        ? <DeliveryTable items={list.items} showDestination={Boolean(destinations)} />
+        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>{workspaceName && environment === 'TEST' && !filter && !search && !destination ? 'Send a test event to see your first delivery here.' : 'No deliveries match this view.'}</p></div>)}
       {list && <div className="pagination">
         <span>{list.items.length} {list.items.length === 1 ? 'delivery' : 'deliveries'} · Page {cursors.length}</span>
         <div className="flex gap-2">
@@ -107,7 +157,7 @@ export function Dashboard({ operator, initial, workspaceName, destination }: {
   </main>
 }
 
-function DeliveryTable({ items }: { items: DeliveryList['items'] }) {
+function DeliveryTable({ items, showDestination }: { items: DeliveryList['items']; showDestination: boolean }) {
   return <table className="delivery-table">
     <caption className="sr-only">Webhook delivery log</caption>
     <thead>
@@ -126,6 +176,7 @@ function DeliveryTable({ items }: { items: DeliveryList['items'] }) {
           <span className="event-type">{delivery.event.eventType}</span>
           {delivery.historical && <span className="fixture-label">Sample</span>}
           {delivery.event.isTest && <span className="fixture-label">Test event</span>}
+          {showDestination && <div className="muted text-xs wrap-anywhere">{delivery.endpoint.name}</div>}
           <div className="mobile-metadata">
             <code>{delivery.id.slice(0, 8)}</code>
             <CopyButton value={delivery.id} label={`Copy delivery ID for ${delivery.event.eventType}`} />

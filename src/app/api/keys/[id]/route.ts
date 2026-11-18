@@ -8,7 +8,7 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
   return respond(async () => {
     const scope = await authorizeMutation(request)
     const id = parse(z.uuid(), (await params).id)
-    if (scope.mode !== 'private' || !await revokeApiKey(db(), scope.workspaceId, id)) {
+    if (scope.mode !== 'private' || !await revokeApiKey(db(), scope.workspaceId, id, scope.environment, scope.actor)) {
       throw new ApiError(404, 'NOT_FOUND', 'API key not found.')
     }
     return json({ revoked: true })

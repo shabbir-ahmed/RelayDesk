@@ -14,7 +14,7 @@ export default async function Page({ params }: { params: Promise<{ id: string }>
   const demo = appMode() === 'demo'
   const session = await operatorSession()
   if (!demo && !session) redirect('/login')
-  const delivery = await deliveryDetail(db(), session?.workspaceId ?? demoScope.workspaceId, id)
+  const delivery = await deliveryDetail(db(), session?.workspaceId ?? demoScope.workspaceId, id, session?.environment ?? demoScope.environment)
   if (!delivery) notFound()
   return <DeliveryDetail key={id} id={id} initial={delivery} operator={Boolean(session)} demo={demo} />
 }

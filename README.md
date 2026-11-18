@@ -1,6 +1,6 @@
 # RelayDesk
 
-RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, inspect delivery attempts in your workspace, and replay failures while keeping their history.
+RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event from your application, route it by subscription, and use private delivery history, failure alerts, and replay to recover from errors.
 
 ![RelayDesk delivery history in demo mode](docs/screenshots/dashboard.png)
 
@@ -8,7 +8,7 @@ RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event
 
 ## Run the private beta
 
-Private mode is the default. Run the web app, worker, and PostgreSQL with Docker Compose, then provision your first workspace and approved destination. The guide includes the environment settings, provisioning command, and event API. [Private beta setup](docs/private-beta.md)
+Private mode is the default. Run the web app, worker, and PostgreSQL with Docker Compose, then create a workspace and have an administrator approve a Test destination. The guide includes the environment settings, provisioning command, and event API. [Private beta setup](docs/private-beta.md)
 
 ## Run the isolated demo
 

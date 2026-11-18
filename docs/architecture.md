@@ -12,15 +12,15 @@ flowchart LR
 
 ## Schema and submission
 
-- `Workspace` stores the workspace identity and a digest of the generated sign-in code. Each workspace has one approved `Endpoint`. The event API resolves that endpoint from the signed-in workspace or bearer key. Demo mode uses its fixed seeded workspace and receiver.
-- `ApiKey` stores a workspace-scoped token digest, prefix, and revocation timestamp.
+- `Workspace` stores the workspace identity and an optional legacy access-code digest. `Account` and `Membership` link named users to workspaces with owner or member access. Invitations store an expiring single-use token digest. Each workspace has approved `Endpoint` records with explicit event subscriptions. The event API resolves matching endpoints from the bearer key’s workspace. A test event is sent to its selected endpoint. Demo mode uses its fixed seeded workspace and receiver.
+- `ApiKey` stores a token digest, prefix, and revocation timestamp scoped to a workspace and environment.
 - `Event` keeps the validated event type and JSON payload, the exact canonical envelope, and a SHA-256 fingerprint of the submitted event type, payload, and original receiver mode.
 - `Delivery` holds the queue state, current cycle, attempt count, due time, receiver mode, and lease. It is unique by event and endpoint.
 - `DeliveryAttempt` records each claim, outcome, mode, timing, and bounded error. It is unique by delivery, cycle, and attempt number. IDs use UUIDs, dates use `timestamptz`, and history relations restrict deletion.
 
-The event and delivery commit together. The event insert passes canonical JSON text to PostgreSQL so that JSON object keys survive intact. A duplicate workspace/key rolls back the write transaction before the service reads the committed event. The same fingerprint returns the original IDs and different input returns HTTP 409. Replay leaves the original event and fingerprint intact.
+The event, daily usage increment, and all matching deliveries commit together. Usage is counted once per accepted event per UTC day. Endpoint, key, event, delivery, and alert access is scoped to the selected Test or Live environment. A live event can be recorded with zero matching destinations. Subscription changes apply to future submissions. The event insert passes canonical JSON text to PostgreSQL so that JSON object keys survive intact. A duplicate workspace/environment/key rolls back the write transaction before the service reads the committed event. The same fingerprint returns the original IDs and different input returns HTTP 409. Replay leaves the original event and fingerprint intact.
 
-Private reads require a session and scope every query to that workspace. The isolated demo reads only its fixed synthetic workspace. Reads select only display fields. PostgreSQL groups counts by status and computes the latest recorded attempt completion. The list uses a descending `createdAt, id` keyset cursor with a default of 25 and maximum of 50 rows. Detail history caps at 12 attempts, the maximum across four cycles. The browser polls every three seconds while visible.
+Private reads require a session and scope every query to that workspace. The isolated demo reads only its fixed synthetic workspace. Reads select only display fields. PostgreSQL groups counts by status and computes the latest recorded attempt completion. Deliveries can be filtered by event type or full ID, status, and destination. Lists use a descending `createdAt, id` keyset cursor with a default of 25 and maximum of 50 rows. Detail history caps at 12 attempts, the maximum across four cycles. The browser polls every three seconds while visible.
 
 ## Worker lifecycle
 
@@ -29,6 +29,8 @@ Private reads require a session and scope every query to that workspace. The iso
 3. POST the immutable body to the approved HTTPS destination. The worker validates every DNS answer and connects to one validated public address while preserving TLS hostname verification. The demo worker sends to the fixed `/api/demo/receiver` route. Both use a three-second deadline, stop at redirects, and discard response bodies.
 4. In another transaction, lock the matching delivery and confirm the cycle, token, and unexpired lease against database time before updating the attempt and delivery. An expired or replaced lease produces a stale-completion log and leaves the newer state intact.
 5. An operator can requeue a FAILED delivery with a conditional update. Replay increments the cycle, resets the attempt count, preserves the same event/body and all history, and routes to the same destination. In demo mode, an operator may change the simulation mode for a replay. A delivery can be replayed for up to three extra cycles.
+
+A terminal failure in private mode records one `FailureAlert` per delivery cycle in the same transaction as the status change. The workspace audit log records configuration changes and successful replay requests with their originating mutations.
 
 Database time governs claim eligibility, recovery, finalization, and replay scheduling. A worker processes one outstanding send at a time. Each process uses one Prisma client and defaults to four pool connections. The queue indexes cover due work and expired leases, and a separate index supports the created-time list.
 

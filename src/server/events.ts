@@ -1,10 +1,11 @@
 import { createHash, randomUUID } from 'node:crypto'
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import stringify from 'fast-json-stable-stringify'
 import { z } from 'zod'
-import { receiverModes } from '../shared/delivery'
+import { receiverModes, type Environment } from '../shared/delivery'
 import { ApiError } from './http'
-import { workspaceDestination } from './workspaces'
+import { demoScope } from './demo'
+import { consumeEvent } from './usage'
 
 const postgresText = (value: string) => !value.includes('\u0000') && value.isWellFormed()
 
@@ -40,62 +41,96 @@ type Submission = z.infer<typeof submissionSchema>
 
 class DuplicateSubmission extends Error {}
 
-export function fingerprint({ eventType, payload, receiverMode }: Omit<Submission, 'idempotencyKey'>, isTest = false) {
-  return createHash('sha256').update(stringify({ eventType, payload, receiverMode, ...(isTest && { test: true }) })).digest('hex')
+export function fingerprint({ eventType, payload, receiverMode }: Omit<Submission, 'idempotencyKey'>, isTest = false, targeted = false) {
+  return createHash('sha256').update(stringify({ eventType, payload, receiverMode, ...(isTest && { test: true }), ...(targeted && { targeted: true }) })).digest('hex')
 }
 
 export function eventBody(event: { id: string; eventType: string; payload: unknown; createdAt: Date; isTest?: boolean }) {
   return stringify({ id: event.id, type: event.eventType, payload: event.payload, createdAt: event.createdAt.toISOString(), ...(event.isTest && { test: true }) })
 }
 
-type DestinationScope = { workspaceId: string; endpointId: string; isTest?: boolean }
+type DestinationScope = { workspaceId: string; endpointId?: string; targeted?: boolean; environment?: Environment }
 
-export async function submitWorkspaceEvent(
-  db: PrismaClient, workspaceId: string, input: z.infer<typeof workspaceSubmissionSchema>, isTest = false,
-) {
-  const endpoint = await workspaceDestination(db, workspaceId)
-  if (!endpoint?.destinationUrl) {
-    throw new ApiError(409, 'CONFLICT', 'This workspace needs an approved HTTPS destination.')
+async function resolveEndpoints(tx: Prisma.TransactionClient, scope: DestinationScope, eventType: string) {
+  const { workspaceId, endpointId, targeted, environment = 'LIVE' } = scope
+  const where = { workspaceId, environment, destinationUrl: { not: null } }
+  if (endpointId) {
+    const endpoint = await tx.endpoint.findFirst({
+      where: workspaceId === demoScope.workspaceId ? { id: endpointId, workspaceId } : { ...where, id: endpointId },
+      select: { id: true },
+    })
+    if (!endpoint) throw new ApiError(404, 'NOT_FOUND', 'Destination not found.')
+    return [endpoint]
   }
-  return submitEvent(db, { ...input, receiverMode: 'SUCCEED' }, { workspaceId, endpointId: endpoint.id, isTest })
+  if (targeted) {
+    const endpoints = await tx.endpoint.findMany({ where, select: { id: true }, take: 2 })
+    if (endpoints.length !== 1) {
+      throw new ApiError(400, 'INVALID_INPUT', 'Choose an approved destination for the test event.')
+    }
+    return endpoints
+  }
+  return tx.endpoint.findMany({
+    where: { ...where, eventTypes: { hasSome: ['*', eventType] } },
+    select: { id: true },
+  })
+}
+
+function eventReceipt(eventId: string, deliveries: { id: string; endpointId: string }[], created: boolean) {
+  const deliveryIds = deliveries.sort((a, b) => a.endpointId.localeCompare(b.endpointId)).map(({ id }) => id)
+  return { eventId, deliveryId: deliveryIds[0] ?? null, deliveryIds, created }
+}
+
+export function submitWorkspaceEvent(
+  db: PrismaClient, workspaceId: string, input: z.infer<typeof workspaceSubmissionSchema>, environment: Environment = 'LIVE',
+) {
+  return submitEvent(db, { ...input, receiverMode: 'SUCCEED' }, { workspaceId, environment })
+}
+
+export function submitWorkspaceTest(
+  db: PrismaClient, workspaceId: string, input: z.infer<typeof workspaceSubmissionSchema>, endpointId?: string,
+) {
+  return submitEvent(db, { ...input, receiverMode: 'SUCCEED' }, { workspaceId, endpointId, targeted: true, environment: 'TEST' })
 }
 
 export async function submitEvent(db: PrismaClient, input: Submission, scope: DestinationScope, afterEventWrite?: () => void) {
-  const { workspaceId, endpointId, isTest = false } = scope
-  const requestFingerprint = fingerprint(input, isTest)
+  const { workspaceId, endpointId, targeted = false, environment = 'LIVE' } = scope
+  const isTest = environment === 'TEST'
+  const requestFingerprint = fingerprint(input, isTest, targeted)
   try {
-    const result = await db.$transaction(async (tx) => {
+    return await db.$transaction(async (tx) => {
       const id = randomUUID()
       const createdAt = new Date()
       const body = eventBody({ id, eventType: input.eventType, payload: input.payload, createdAt, isTest })
       // Pass JSON as text because Prisma's object serializer drops keys such as "__proto__".
       const [event] = await tx.$queryRaw<{ id: string }[]>`
-        INSERT INTO "Event" (id, "workspaceId", "endpointId", "eventType", payload,
+        INSERT INTO "Event" (id, "workspaceId", environment, "eventType", payload,
           "canonicalBody", "requestFingerprint", "idempotencyKey", "createdAt", "isTest")
-        VALUES (${id}::uuid, ${workspaceId}::uuid, ${endpointId}::uuid, ${input.eventType},
+        VALUES (${id}::uuid, ${workspaceId}::uuid, ${environment}::"Environment", ${input.eventType},
           ${stringify(input.payload)}::jsonb, ${body}, ${requestFingerprint}, ${input.idempotencyKey}, ${createdAt}, ${isTest})
-        ON CONFLICT ("workspaceId", "idempotencyKey") DO NOTHING
+        ON CONFLICT ("workspaceId", environment, "idempotencyKey") DO NOTHING
         RETURNING id
       `
       if (!event) throw new DuplicateSubmission()
       afterEventWrite?.()
-      const delivery = await tx.delivery.create({
-        data: { eventId: event.id, endpointId, receiverMode: input.receiverMode },
-        select: { id: true },
-      })
-      return { eventId: event.id, deliveryId: delivery.id }
+      if (workspaceId !== demoScope.workspaceId) await consumeEvent(tx, workspaceId, environment, createdAt)
+      const endpoints = await resolveEndpoints(tx, scope, input.eventType)
+      const deliveries = endpoints.length ? await tx.delivery.createManyAndReturn({
+        data: endpoints.map(({ id }) => ({ eventId: event.id, endpointId: id, receiverMode: input.receiverMode })),
+        select: { id: true, endpointId: true },
+      }) : []
+      return eventReceipt(event.id, deliveries, true)
     })
-    return { ...result, created: true }
   } catch (error) {
     if (!(error instanceof DuplicateSubmission)) throw error
     const existing = await db.event.findUnique({
-      where: { workspaceId_idempotencyKey: { workspaceId, idempotencyKey: input.idempotencyKey } },
-      select: { id: true, requestFingerprint: true, deliveries: { where: { endpointId }, select: { id: true } } },
+      where: { workspaceId_environment_idempotencyKey: { workspaceId, environment, idempotencyKey: input.idempotencyKey } },
+      select: { id: true, requestFingerprint: true, deliveries: { select: { id: true, endpointId: true } } },
     })
-    if (!existing?.deliveries[0]) throw error
-    if (existing.requestFingerprint !== requestFingerprint) {
+    if (!existing) throw error
+    if (existing.requestFingerprint !== requestFingerprint ||
+      (targeted && endpointId && existing.deliveries[0]?.endpointId !== endpointId)) {
       throw new ApiError(409, 'CONFLICT', 'This idempotency key belongs to a different submission.')
     }
-    return { eventId: existing.id, deliveryId: existing.deliveries[0].id, created: false }
+    return eventReceipt(existing.id, existing.deliveries, false)
   }
 }

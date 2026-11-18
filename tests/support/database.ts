@@ -12,12 +12,18 @@ export function testDb() {
 export async function prepareDatabase() {
   const database = testDb()
   await database.$transaction([
+    database.failureAlert.deleteMany(),
+    database.auditEntry.deleteMany(),
     database.deliveryAttempt.deleteMany(),
     database.delivery.deleteMany(),
     database.event.deleteMany(),
     database.apiKey.deleteMany(),
     database.endpoint.deleteMany({ where: { destinationUrl: { not: null } } }),
+    database.dailyUsage.deleteMany(),
+    database.invitation.deleteMany(),
+    database.membership.deleteMany(),
     database.workspace.deleteMany({ where: { slug: { not: null } } }),
+    database.account.deleteMany(),
   ])
   await ensureDemo(database)
 }
