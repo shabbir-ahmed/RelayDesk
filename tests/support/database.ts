@@ -12,6 +12,8 @@ export function testDb() {
 export async function prepareDatabase() {
   const database = testDb()
   await database.$transaction([
+    database.authLimit.deleteMany(),
+    database.workerHeartbeat.deleteMany(),
     database.failureAlert.deleteMany(),
     database.auditEntry.deleteMany(),
     database.deliveryAttempt.deleteMany(),

@@ -48,7 +48,7 @@ export async function redeemInvitation(db: PrismaClient, input: z.infer<typeof j
 
   const existing = await db.account.findUnique({
     where: { username: input.username },
-    select: { id: true, passwordHash: true },
+    select: { id: true, passwordHash: true, sessionVersion: true },
   })
   if (existing && !await verifyPassword(input.password, existing.passwordHash)) throw unauthorized()
   const passwordHash = existing ? undefined : await hashPassword(input.password)
@@ -62,12 +62,22 @@ export async function redeemInvitation(db: PrismaClient, input: z.infer<typeof j
         RETURNING id, "workspaceId"
       `
       if (!invitation) throw unavailable()
+      if (existing) {
+        const [current] = await tx.$queryRaw<{ id: string }[]>`
+          SELECT id FROM "Account" WHERE id = ${existing.id}::uuid AND "sessionVersion" = ${existing.sessionVersion}
+          FOR UPDATE
+        `
+        if (!current) throw unauthorized()
+      }
       const account = existing ?? await tx.account.create({
-        data: { username: input.username, passwordHash: passwordHash! }, select: { id: true },
+        data: { username: input.username, passwordHash: passwordHash! }, select: { id: true, sessionVersion: true },
       })
-      await tx.membership.create({ data: { workspaceId: invitation.workspaceId, accountId: account.id, role: 'MEMBER' } })
+      const member = await tx.membership.create({
+        data: { workspaceId: invitation.workspaceId, accountId: account.id, role: 'MEMBER' },
+        select: { sessionId: true },
+      })
       await recordAudit(tx, invitation.workspaceId, 'INVITE_ACCEPTED', invitation.id, 'Joined the workspace by invitation.', { actor: input.username })
-      return { workspaceId: invitation.workspaceId, accountId: account.id }
+      return { workspaceId: invitation.workspaceId, accountId: account.id, memberSessionId: member.sessionId, sessionVersion: account.sessionVersion }
     })
   } catch (error) {
     if (error instanceof Prisma.PrismaClientKnownRequestError && error.code === 'P2002') {

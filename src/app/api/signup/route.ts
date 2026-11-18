@@ -2,7 +2,7 @@ import { createAccountWorkspace, signupSchema } from '@/server/accounts'
 import { db } from '@/server/db'
 import { appMode, webEnv } from '@/server/env'
 import { ApiError, json, parse, readJson, respond } from '@/server/http'
-import { limitRegistration } from '@/server/login-limiter'
+import { limitAuth } from '@/server/login-limiter'
 import { beginSession, requireOrigin } from '@/server/operator'
 
 export async function POST(request: Request) {
@@ -11,7 +11,7 @@ export async function POST(request: Request) {
     const config = webEnv()
     requireOrigin(request, config)
     const input = parse(signupSchema, await readJson(request, 2 * 1024))
-    limitRegistration('signup')
+    await limitAuth(db(), 'signup', 20)
     const account = await createAccountWorkspace(db(), input)
     await beginSession(config, { ...account, environment: 'TEST' })
     return json({ created: true }, 201)

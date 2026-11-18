@@ -1,0 +1,45 @@
+groups:
+  - name: relaydesk-pilot
+    rules:
+      - alert: RelayDeskMetricsUnavailable
+        expr: up{job="relaydesk"} == 0 or absent(up{job="relaydesk"})
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: RelayDesk metrics are unavailable
+      - alert: RelayDeskWorkerStale
+        expr: relaydesk_worker_heartbeat_age_seconds < 0 or relaydesk_worker_heartbeat_age_seconds > 30
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: RelayDesk has no recent worker heartbeat
+      - alert: RelayDeskQueueLag
+        expr: relaydesk_queue_oldest_ready_seconds > 30
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          summary: An eligible delivery has been waiting for more than 30 seconds
+      - alert: RelayDeskLeaseRecovery
+        expr: relaydesk_expired_leases > 0
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: RelayDesk has expired leases that have yet to recover
+      - alert: RelayDeskDeliveryFailures
+        expr: relaydesk_exhausted_deliveries_5m > 5
+        for: 1m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than five deliveries reached terminal failure in five minutes
+      - alert: RelayDeskRetrySurge
+        expr: relaydesk_retry_attempts_5m / clamp_min(relaydesk_completed_attempts_5m, 1) > 0.25 and relaydesk_completed_attempts_5m >= 20
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: More than a quarter of recently completed attempts were retries

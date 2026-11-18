@@ -70,7 +70,7 @@ Run `npm run smoke` against a running demo instance using its `APP_ORIGIN` and `
 
 ## Hosting
 
-The local release uses the same build for the web and worker. The [deployment guide](docs/deployment.md) gives the container commands, environment, and current hosting status.
+The local release uses the same build for the web and worker. The [deployment guide](docs/deployment.md) gives the container commands, environment, and current hosting status. The [production pilot runbook](docs/production-pilot.md) covers the staging gate, monitoring, recovery, and rotation.
 
 ## License
 

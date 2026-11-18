@@ -29,7 +29,7 @@ export function AccountForm({ signup }: { signup: boolean }) {
     }
   }
 
-  return <form className="space-y-4" onSubmit={submit}>
+  return <form method="post" className="space-y-4" onSubmit={submit}>
     {signup && <>
       <div className="field">
         <label htmlFor="account-workspace-name">Workspace name</label>

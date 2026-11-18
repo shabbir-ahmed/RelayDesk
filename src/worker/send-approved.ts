@@ -26,7 +26,10 @@ export async function sendApproved(claim: Claim, key: string, transport: Transpo
     if (!claim.endpoint.destinationUrl) throw new BlockedDestination()
     const url = destinationUrl(claim.endpoint.destinationUrl)
     const { address, family } = await withDeadline(resolveDestination(url.hostname, transport.resolve), deadline)
-    const secret = destinationSecret(key, claim.endpoint.id)
+    const { id, signingVersion, signingOverlapUntil } = claim.endpoint
+    const current = destinationSecret(key, id, signingVersion)
+    const overlap = signingVersion > 1 && signingOverlapUntil !== null && Date.now() < signingOverlapUntil.getTime()
+    const primary = overlap ? destinationSecret(key, id, signingVersion - 1) : current
     return await new Promise<Outcome>((resolve, reject) => {
       const post = (transport.request ?? request)(url, {
         method: 'POST',
@@ -38,12 +41,12 @@ export async function sendApproved(claim: Claim, key: string, transport: Transpo
         headers: {
           'Content-Type': 'application/json',
           'Content-Length': Buffer.byteLength(body),
-          ...deliveryHeaders(claim, secret),
+          ...deliveryHeaders(claim, primary, overlap ? current : undefined),
         },
       }, (response) => {
         const status = response.statusCode
         response.destroy()
-        resolve(status ? classifyHttp(status) : networkFailure(deadline))
+        resolve(status ? classifyHttp(status, response.headers['retry-after']) : networkFailure(deadline))
       })
       post.once('error', reject)
       post.end(body)

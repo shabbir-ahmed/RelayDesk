@@ -1,5 +1,6 @@
 export const timing = {
   pollMs: 1_000,
+  heartbeatMs: 10_000,
   leaseMs: 30_000,
   timeoutMs: 3_000,
   receiverTimeoutMs: 4_000,

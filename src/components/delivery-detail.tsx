@@ -21,7 +21,7 @@ export function DeliveryDetail({ id, initial, operator, demo }: { id: string; in
   const { data, error } = useLive(id, load, initial, revision)
   const delivery = data ?? initial
   const replaysUsed = delivery.cycle - 1
-  const canReplay = delivery.status === 'FAILED' && replaysUsed < maxReplayCycles
+  const canReplay = delivery.status === 'FAILED' && !delivery.event.payloadPurgedAt && replaysUsed < maxReplayCycles
   const groups = new Map<number, Attempt[]>()
   for (const attempt of delivery.attempts) {
     const group = groups.get(attempt.cycle)
@@ -77,9 +77,11 @@ export function DeliveryDetail({ id, initial, operator, demo }: { id: string; in
         <section className="panel" aria-labelledby="event-payload">
           <div className="panel-heading">
             <h2 className="section-title" id="event-payload"><Code2 size={18} aria-hidden="true" /> Event payload</h2>
-            <CopyButton value={JSON.stringify(delivery.event.payload, null, 2)} visible label="Copy JSON payload" />
+            {!delivery.event.payloadPurgedAt && <CopyButton value={JSON.stringify(delivery.event.payload, null, 2)} visible label="Copy JSON payload" />}
           </div>
-          <pre className="payload"><code>{JSON.stringify(delivery.event.payload, null, 2)}</code></pre>
+          {delivery.event.payloadPurgedAt
+            ? <p className="muted p-4">The event payload expired. Delivery and attempt history are still available.</p>
+            : <pre className="payload"><code>{JSON.stringify(delivery.event.payload, null, 2)}</code></pre>}
         </section>
       </div>
 
@@ -103,6 +105,7 @@ export function DeliveryDetail({ id, initial, operator, demo }: { id: string; in
 function StateNote({ delivery }: { delivery: Detail }) {
   if (delivery.nextAttemptAt) return <>Next attempt is eligible at <Timestamp value={delivery.nextAttemptAt} seconds />.</>
   if (delivery.leaseExpiresAt) return <>A worker owns this attempt until <Timestamp value={delivery.leaseExpiresAt} seconds />.</>
+  if (delivery.status === 'FAILED' && delivery.event.payloadPurgedAt) return 'The event payload has expired.'
   if (delivery.status === 'FAILED') return delivery.cycle > maxReplayCycles
     ? 'The manual replay limit has been reached.'
     : 'Automatic delivery has ended. An operator can start a new cycle.'

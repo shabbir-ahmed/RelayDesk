@@ -3,12 +3,15 @@
 import { useState } from 'react'
 import { errorMessage, post, requestJson } from './client-http'
 import { CopyButton, InlineError, Modal } from './controls'
+import { RecoveryCode } from './recovery'
 import { Timestamp } from './presentation'
 
 type Invite = { expired: boolean; id: string; createdAt: string; expiresAt: string; redeemedAt: string | null; revokedAt: string | null }
-type Member = { username: string; role: 'OWNER' | 'MEMBER' }
+type Member = { id: string; username: string; role: 'OWNER' | 'MEMBER' }
 
-export function Team({ members, owner, legacy, initial }: { members: Member[]; owner: boolean; legacy: boolean; initial: Invite[] }) {
+export function Team({ members: initialMembers, owner, named, legacy, initial }: { members: Member[]; owner: boolean; named: boolean; legacy: boolean; initial: Invite[] }) {
+  const [members, setMembers] = useState(initialMembers)
+  const [selected, setSelected] = useState<Member>()
   const [invitations, setInvitations] = useState(initial)
   const [link, setLink] = useState('')
   const [busy, setBusy] = useState(false)
@@ -42,6 +45,20 @@ export function Team({ members, owner, legacy, initial }: { members: Member[]; o
     }
   }
 
+  async function remove(member: Member) {
+    setBusy(true)
+    setError('')
+    try {
+      await requestJson('/api/team/' + member.id, { method: 'DELETE' })
+      setMembers((previous) => previous.filter((entry) => entry.id !== member.id))
+      setSelected(undefined)
+    } catch (error) {
+      setError(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
   return <main className="shell page-content guide-page" id="main">
     <div className="page-heading">
       <div>
@@ -50,13 +67,16 @@ export function Team({ members, owner, legacy, initial }: { members: Member[]; o
       </div>
       {owner && <button type="button" className="button button-primary" disabled={busy} onClick={create}>Create invitation</button>}
     </div>
-    {error && <div className="mb-4"><InlineError message={error} /></div>}
+    {error && !selected && <div className="mb-4"><InlineError message={error} /></div>}
     <section className="panel mb-5" aria-labelledby="team-members">
       <div className="panel-heading"><h2 className="section-title" id="team-members">Members</h2></div>
       <ul className="divide-y divide-slate-200">
         {legacy && <li className="flex justify-between p-4"><span>Legacy operator</span><span className="muted">Owner</span></li>}
-        {members.map(({ username, role }) => <li key={username} className="flex flex-wrap justify-between gap-2 p-4">
-          <span className="wrap-anywhere">{username}</span><span className="muted">{role === 'OWNER' ? 'Owner' : 'Member'}</span>
+        {members.map((member) => <li key={member.id} className="flex flex-wrap justify-between gap-2 p-4">
+          <span className="wrap-anywhere"><span>{member.username}</span> <span className="muted text-sm">· {member.role === 'OWNER' ? 'Owner' : 'Member'}</span></span>
+          {owner && member.role === 'MEMBER' && <button className="button button-secondary" type="button" disabled={busy}
+            aria-label={`Remove ${member.username}`} onClick={() => { setError('')
+              setSelected(member) }}>Remove</button>}
         </li>)}
       </ul>
     </section>
@@ -77,6 +97,12 @@ export function Team({ members, owner, legacy, initial }: { members: Member[]; o
         })}
       </ul>
     </section>}
+    {named && <RecoveryCode />}
+    {selected && <Modal title="Remove workspace member" busy={busy} onClose={() => setSelected(undefined)}>
+      <p className="muted mb-4"><strong>{selected.username}</strong> will immediately lose access to this workspace.</p>
+      {error && <InlineError message={error} />}
+      <button className="button button-primary mt-4" type="button" onClick={() => remove(selected)} disabled={busy}>Remove member</button>
+    </Modal>}
     {link && <Modal title="Share invitation" busy={false} onClose={() => setLink('')}>
       <p className="muted mb-4">Share this single-use link privately. It expires in 48 hours.</p>
       <div className="id-group mb-4">

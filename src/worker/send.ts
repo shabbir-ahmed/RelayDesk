@@ -4,7 +4,7 @@ import { classifyHttp, type Outcome } from './outcomes'
 import type { Claim } from './queue'
 import { timing } from './timing'
 
-export function deliveryHeaders(claim: Claim, secret: string) {
+export function deliveryHeaders(claim: Claim, secret: string, secondarySecret?: string) {
   return signedHeaders(secret, {
     eventId: claim.event.id,
     deliveryId: claim.id,
@@ -12,7 +12,7 @@ export function deliveryHeaders(claim: Claim, secret: string) {
     attempt: claim.attemptsInCycle,
     timestamp: Math.floor(Date.now() / 1_000),
     mode: claim.receiverMode,
-  }, claim.event.canonicalBody)
+  }, claim.event.canonicalBody, secondarySecret)
 }
 
 export function networkFailure(timeout: AbortSignal): Outcome {
