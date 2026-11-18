@@ -8,7 +8,7 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
   return respond(async () => {
     const scope = await authorizeMutation(request)
     const id = parse(z.uuid(), (await params).id)
-    if (scope.mode !== 'private' || !await acknowledgeAlert(db(), scope.workspaceId, id)) {
+    if (scope.mode !== 'private' || !await acknowledgeAlert(db(), scope.workspaceId, id, scope.environment)) {
       throw new ApiError(404, 'NOT_FOUND', 'Alert not found.')
     }
     return json({ acknowledged: true })

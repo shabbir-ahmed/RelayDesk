@@ -60,14 +60,18 @@ test('fan-out and zero-match receipts stay fixed across subscription changes', a
   expect(await submitWorkspaceEvent(database, alpha.id, noMatch)).toEqual({ ...unrouted, created: false })
 
   const sample = event('relaydesk.test')
+  const testExtra = await approveDestination(database, { slug: 'alpha', name: 'Test invoices', url: 'https://alpha.receiver.test/invoices', environment: 'TEST' })
+  const testPaused = await approveDestination(database, { slug: 'alpha', name: 'Test paused', url: 'https://alpha.receiver.test/paused', environment: 'TEST' })
   await expect(submitWorkspaceTest(database, alpha.id, sample)).rejects.toMatchObject({ status: 400 })
   await expect(submitWorkspaceTest(database, alpha.id, sample, beta.endpoint.id)).rejects.toMatchObject({ status: 404 })
-  const targeted = await submitWorkspaceTest(database, alpha.id, sample, extra.id)
+  await expect(submitWorkspaceTest(database, alpha.id, sample, extra.id)).rejects.toMatchObject({ status: 404 })
+  const targeted = await submitWorkspaceTest(database, alpha.id, sample, testExtra.id)
   expect(targeted.deliveryIds).toHaveLength(1)
-  expect(await submitWorkspaceTest(database, alpha.id, sample, extra.id)).toEqual({ ...targeted, created: false })
-  await expect(submitWorkspaceTest(database, alpha.id, sample, paused.id)).rejects.toMatchObject({ status: 409 })
-  expect((await query(alpha.id, { destination: extra.id })).items.some((row) => row.id === targeted.deliveryId && row.event.isTest))
-    .toBe(true)
+  expect(await submitWorkspaceTest(database, alpha.id, sample, testExtra.id)).toEqual({ ...targeted, created: false })
+  await expect(submitWorkspaceTest(database, alpha.id, sample, testPaused.id)).rejects.toMatchObject({ status: 409 })
+  expect((await listDeliveries(database, alpha.id, new URLSearchParams({ destination: testExtra.id }), 'TEST')).items[0])
+    .toMatchObject({ id: targeted.deliveryId, event: { isTest: true } })
+  expect((await query(alpha.id, { destination: testExtra.id })).items).toEqual([])
 })
 
 test('terminal failures alert once per cycle and only the owning workspace can acknowledge or replay them', async () => {

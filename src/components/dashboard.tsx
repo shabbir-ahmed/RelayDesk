@@ -4,7 +4,7 @@ import { ArrowUpRight, Bell, ChevronLeft, ChevronRight, Globe2, Inbox, ShieldChe
 import Link from 'next/link'
 import { useCallback, useId, useState } from 'react'
 import type { DeliveryList, DeliverySummary } from '@/server/reads'
-import { deliveryStatuses, type DeliveryStatus, type DestinationOption } from '@/shared/delivery'
+import { deliveryStatuses, type DeliveryStatus, type DestinationOption, type Environment } from '@/shared/delivery'
 import { requestJson } from './client-http'
 import { CopyButton, InlineError } from './controls'
 import { CreateEventButton } from './event-form'
@@ -13,8 +13,8 @@ import { useLive } from './use-live'
 
 type DashboardData = { list: DeliveryList; summary: DeliverySummary | null }
 
-export function Dashboard({ operator, initial, workspaceName, destinations }: {
-  operator: boolean; initial?: DashboardData; workspaceName?: string; destinations?: DestinationOption[]
+export function Dashboard({ operator, initial, workspaceName, destinations, environment }: {
+  operator: boolean; initial?: DashboardData; environment: Environment; workspaceName?: string; destinations?: DestinationOption[]
 }) {
   const [filter, setFilter] = useState<DeliveryStatus | ''>('')
   const [destination, setDestination] = useState('')
@@ -40,6 +40,7 @@ export function Dashboard({ operator, initial, workspaceName, destinations }: {
   const { data, error } = useLive(query, load, initial, revision)
   const latest = data?.summary?.latestCompletionAt
   const openAlerts = data?.summary?.openAlerts ?? 0
+  const usage = data?.summary?.usage
   const list = data?.list
 
   return <main className="shell page-content" id="main">
@@ -54,8 +55,17 @@ export function Dashboard({ operator, initial, workspaceName, destinations }: {
           ? 'Monitor deliveries to your destinations and replay failed events.'
           : 'Track synthetic webhook events, inspect delivery attempts, and recover from failures.'}</p>
       </div>
-      {operator && (!destinations || destinations.length > 0) && <CreateEventButton destinations={destinations} />}
+      {operator && (!destinations || (environment === 'TEST' && destinations.length > 0)) && <CreateEventButton destinations={destinations} />}
     </div>
+
+    {usage && <section aria-labelledby="event-usage" className="panel mb-4 flex flex-wrap items-center justify-between gap-3 p-4">
+      <div>
+        <h2 id="event-usage" className="font-semibold">Daily event usage</h2>
+        <p className="muted text-sm">{usage.used.toLocaleString()} of {usage.limit.toLocaleString()} · Resets at midnight UTC</p>
+      </div>
+      <progress aria-label="Daily event usage" className="w-44 max-w-full accent-indigo-600"
+        value={Math.min(usage.used, usage.limit)} max={usage.limit} />
+    </section>}
 
     {workspaceName && openAlerts > 0 && <Link href="/operations" className="panel mb-4 flex items-center gap-2 p-4 font-semibold text-indigo-700">
       <Bell size={17} aria-hidden="true" /> {openAlerts} open failure {openAlerts === 1 ? 'alert' : 'alerts'}
@@ -129,7 +139,7 @@ export function Dashboard({ operator, initial, workspaceName, destinations }: {
       {!list && !error && <div className="table-state" role="status">Loading deliveries…</div>}
       {list && (list.items.length
         ? <DeliveryTable items={list.items} showDestination={Boolean(destinations)} />
-        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>{workspaceName && !filter && !search && !destination ? 'Send a test event to see your first delivery here.' : 'No deliveries match this view.'}</p></div>)}
+        : <div className="table-state"><Inbox size={26} aria-hidden="true" /><p>{workspaceName && environment === 'TEST' && !filter && !search && !destination ? 'Send a test event to see your first delivery here.' : 'No deliveries match this view.'}</p></div>)}
       {list && <div className="pagination">
         <span>{list.items.length} {list.items.length === 1 ? 'delivery' : 'deliveries'} · Page {cursors.length}</span>
         <div className="flex gap-2">

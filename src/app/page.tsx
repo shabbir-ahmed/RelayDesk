@@ -15,16 +15,17 @@ export default async function Page() {
   if (mode === 'private' && !session) redirect('/login')
   const workspaceId = session?.workspaceId ?? demoScope.workspaceId
   const database = db()
+  const environment = session?.environment ?? demoScope.environment
   const [workspace, initial, destinations] = await Promise.all([
     mode === 'private' ? database.workspace.findFirst({
       where: { id: workspaceId, slug: { not: null } },
       select: { name: true },
     }) : null,
-    Promise.all([listDeliveries(database, workspaceId), deliverySummary(database, workspaceId)])
+    Promise.all([listDeliveries(database, workspaceId, undefined, environment), deliverySummary(database, workspaceId, environment)])
       .then(([list, summary]) => ({ list, summary })).catch(() => undefined),
-    mode === 'private' ? workspaceDestinations(database, workspaceId) : undefined,
+    mode === 'private' ? workspaceDestinations(database, workspaceId, environment) : undefined,
   ])
   if (mode === 'private' && !workspace) redirect('/login')
-  return <Dashboard key={workspaceId} operator={Boolean(session)} initial={initial}
+  return <Dashboard key={workspaceId + environment} environment={environment} operator={Boolean(session)} initial={initial}
     workspaceName={workspace?.name} destinations={destinations} />
 }

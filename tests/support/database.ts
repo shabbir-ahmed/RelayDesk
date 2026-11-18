@@ -19,7 +19,11 @@ export async function prepareDatabase() {
     database.event.deleteMany(),
     database.apiKey.deleteMany(),
     database.endpoint.deleteMany({ where: { destinationUrl: { not: null } } }),
+    database.dailyUsage.deleteMany(),
+    database.invitation.deleteMany(),
+    database.membership.deleteMany(),
     database.workspace.deleteMany({ where: { slug: { not: null } } }),
+    database.account.deleteMany(),
   ])
   await ensureDemo(database)
 }

@@ -11,6 +11,6 @@ export default async function Page() {
   if (appMode() !== 'private') notFound()
   const scope = await operatorSession()
   if (!scope) redirect('/login')
-  const destinations = await workspaceDestinations(db(), scope.workspaceId)
-  return <Destinations destinations={destinations} />
+  const destinations = await workspaceDestinations(db(), scope.workspaceId, scope.environment)
+  return <Destinations destinations={destinations} showTest={scope.environment === 'TEST'} />
 }

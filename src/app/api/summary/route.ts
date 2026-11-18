@@ -5,9 +5,9 @@ import { deliverySummary } from '@/server/reads'
 
 export const dynamic = 'force-dynamic'
 
-export async function GET() {
+export async function GET(request: Request) {
   return respond(async () => {
-    const { workspaceId } = await deliveryReadScope()
-    return json(await deliverySummary(db(), workspaceId))
+    const { workspaceId, environment } = await deliveryReadScope(request)
+    return json(await deliverySummary(db(), workspaceId, environment))
   })
 }

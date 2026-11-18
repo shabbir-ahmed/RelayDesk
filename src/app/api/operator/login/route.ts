@@ -1,15 +1,17 @@
 import { z } from 'zod'
+import { usernameSchema } from '@/server/accounts'
 import { matchesDigest, matchesSecret } from '@/server/credentials'
 import { db } from '@/server/db'
 import { appMode, demoWebEnv, webEnv } from '@/server/env'
 import { json, parse, readJson, respond, unauthorized } from '@/server/http'
-import { checkLogin } from '@/server/login-limiter'
+import { assertLoginAllowed, checkLogin } from '@/server/login-limiter'
 import { beginSession, requireOrigin } from '@/server/operator'
+import { verifyPassword } from '@/server/password'
 import { workspaceSlug } from '@/server/workspaces'
 
 const credential = z.string().min(1).max(256)
 const demoBody = z.strictObject({ credential })
-const workspaceBody = z.strictObject({ credential, workspace: workspaceSlug })
+const workspaceBody = z.strictObject({ credential, workspace: workspaceSlug, username: usernameSchema.optional() })
 const unusedDigest = '0'.repeat(64)
 
 export async function POST(request: Request) {
@@ -21,15 +23,28 @@ export async function POST(request: Request) {
     if (appMode() === 'demo') {
       checkLogin(matchesSecret(parse(demoBody, input).credential, demoWebEnv().OPERATOR_CREDENTIAL))
       await beginSession(config)
-    } else {
-      const { credential, workspace } = parse(workspaceBody, input)
-      const entry = await db().workspace.findUnique({
-        where: { slug: workspace },
-        select: { id: true, credentialDigest: true },
+      return json({ operator: true })
+    }
+
+    const { credential, workspace, username } = parse(workspaceBody, input)
+    const database = db()
+    const entry = await database.workspace.findUnique({
+      where: { slug: workspace }, select: { id: true, credentialDigest: true },
+    })
+    if (username) {
+      const membership = entry && await database.membership.findFirst({
+        where: { workspaceId: entry.id, account: { username } },
+        select: { accountId: true, account: { select: { passwordHash: true } } },
       })
+      const bucket = entry ? entry.id + ':' + (membership?.accountId ?? 'unknown') : 'unknown'
+      assertLoginAllowed(bucket)
+      checkLogin(await verifyPassword(credential, membership?.account.passwordHash), bucket)
+      if (!entry || !membership) throw unauthorized()
+      await beginSession(config, { workspaceId: entry.id, accountId: membership.accountId, environment: 'TEST' })
+    } else {
       checkLogin(matchesDigest(credential, entry?.credentialDigest ?? unusedDigest) && Boolean(entry?.credentialDigest), entry?.id ?? 'unknown')
       if (!entry) throw unauthorized()
-      await beginSession(config, entry.id)
+      await beginSession(config, { workspaceId: entry.id, environment: 'LIVE' })
     }
     return json({ operator: true })
   })

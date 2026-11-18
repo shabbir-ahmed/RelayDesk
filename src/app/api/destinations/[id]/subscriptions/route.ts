@@ -10,6 +10,6 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
     if (scope.mode !== 'private') throw new ApiError(404, 'NOT_FOUND', 'Destination not found.')
     const id = parse(z.uuid(), (await params).id)
     const { eventTypes } = parse(subscriptionsSchema, await readJson(request, 16 * 1024))
-    return json(await updateSubscriptions(db(), scope.workspaceId, id, eventTypes))
+    return json(await updateSubscriptions(db(), scope.workspaceId, id, eventTypes, scope.environment, scope.actor))
   })
 }

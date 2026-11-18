@@ -8,7 +8,7 @@ import { CreateEventButton } from './event-form'
 
 type Destination = DestinationOption & { eventTypes: string[] }
 
-export function Destinations({ destinations }: { destinations: Destination[] }) {
+export function Destinations({ destinations, showTest }: { destinations: Destination[]; showTest: boolean }) {
   return <main className="shell page-content guide-page" id="main">
     <div className="page-heading">
       <div>
@@ -18,12 +18,12 @@ export function Destinations({ destinations }: { destinations: Destination[] }) 
     </div>
     <div className="space-y-4">
       {!destinations.length && <p className="panel p-5">Ask your RelayDesk administrator to approve a destination.</p>}
-      {destinations.map((destination) => <DestinationCard key={destination.id} destination={destination} />)}
+      {destinations.map((destination) => <DestinationCard key={destination.id} destination={destination} showTest={showTest} />)}
     </div>
   </main>
 }
 
-function DestinationCard({ destination }: { destination: Destination }) {
+function DestinationCard({ destination, showTest }: { destination: Destination; showTest: boolean }) {
   const heading = useId()
   const field = useId()
   const [value, setValue] = useState(destination.eventTypes.join('\n'))
@@ -54,7 +54,7 @@ function DestinationCard({ destination }: { destination: Destination }) {
   return <section className="panel" aria-labelledby={heading}>
     <div className="panel-heading flex-wrap">
       <h2 className="section-title" id={heading}>{destination.name}</h2>
-      <CreateEventButton destinations={[destination]} />
+      {showTest && <CreateEventButton destinations={[destination]} />}
     </div>
     <div className="p-5">
       <div className="id-group mb-4">

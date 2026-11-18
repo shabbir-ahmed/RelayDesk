@@ -18,6 +18,6 @@ export async function POST(request: Request, { params }: { params: Promise<{ id:
       return json(await replay(db(), scope.workspaceId, id, receiverMode))
     }
     parse(z.strictObject({}), input)
-    return json(await replay(db(), scope.workspaceId, id))
+    return json(await replay(db(), scope.workspaceId, id, undefined, scope.environment, scope.actor))
   })
 }

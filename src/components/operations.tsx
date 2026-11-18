@@ -112,7 +112,7 @@ function AuditPanel({ initial }: { initial: Audit }) {
     <ul className="divide-y divide-slate-200">
       {page.data?.items.map((entry) => <li key={entry.id} className="space-y-1 p-5">
         <p className="text-sm font-semibold wrap-anywhere">{entry.summary}</p>
-        <div className="muted text-xs"><Timestamp value={entry.createdAt} seconds /></div>
+        <div className="muted text-xs">{entry.actor && <>{entry.actor} · </>}<Timestamp value={entry.createdAt} seconds /></div>
         {entry.action === 'SUBSCRIPTIONS_UPDATED' && entry.eventTypes.length > 0 && <details className="muted text-sm">
           <summary className="cursor-pointer">Configured event types</summary>
           <p className="wrap-anywhere">{entry.eventTypes[0] === '*' ? 'All event types' : entry.eventTypes.join(', ')}</p>

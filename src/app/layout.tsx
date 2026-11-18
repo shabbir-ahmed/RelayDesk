@@ -10,9 +10,10 @@ export const metadata: Metadata = { title: { default: 'RelayDesk', template: '%s
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   const operator = await operatorSession()
-  return <html lang="en"><body>
+  const environment = operator?.mode === 'private' ? operator.environment : undefined
+  return <html lang="en" data-environment={environment}><body>
     <a className="skip-link" href="#main">Skip to content</a>
-    <Navigation operator={Boolean(operator)} demo={appMode() === 'demo'} />
+    <Navigation operator={Boolean(operator)} environment={environment} demo={appMode() === 'demo'} />
     {children}
   </body></html>
 }

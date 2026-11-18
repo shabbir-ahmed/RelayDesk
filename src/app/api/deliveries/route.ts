@@ -7,7 +7,7 @@ export const dynamic = 'force-dynamic'
 
 export async function GET(request: Request) {
   return respond(async () => {
-    const { workspaceId } = await deliveryReadScope()
-    return json(await listDeliveries(db(), workspaceId, new URL(request.url).searchParams))
+    const { workspaceId, environment } = await deliveryReadScope(request)
+    return json(await listDeliveries(db(), workspaceId, new URL(request.url).searchParams, environment))
   })
 }

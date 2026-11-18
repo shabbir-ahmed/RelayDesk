@@ -35,6 +35,19 @@ enum AuditAction {
   DELIVERY_REPLAYED
   API_KEY_CREATED
   API_KEY_REVOKED
+  INVITE_CREATED
+  INVITE_ACCEPTED
+  INVITE_REVOKED
+}
+
+enum Environment {
+  TEST
+  LIVE
+}
+
+enum WorkspaceRole {
+  OWNER
+  MEMBER
 }
 
 model Workspace {
@@ -46,6 +59,51 @@ model Workspace {
   events           Event[]
   apiKeys          ApiKey[]
   auditEntries     AuditEntry[]
+  memberships      Membership[]
+  invitations      Invitation[]
+  dailyUsage       DailyUsage[]
+}
+
+model Account {
+  id           String       @id @default(uuid()) @db.Uuid
+  username     String       @unique @db.VarChar(60)
+  passwordHash String       @db.VarChar(160)
+  memberships  Membership[]
+}
+
+model Membership {
+  workspaceId String        @db.Uuid
+  workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  accountId   String        @db.Uuid
+  account     Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  role        WorkspaceRole
+  createdAt   DateTime      @default(now()) @db.Timestamptz(3)
+
+  @@id([workspaceId, accountId])
+  @@index([accountId])
+}
+
+model Invitation {
+  id          String    @id @default(uuid()) @db.Uuid
+  workspaceId String    @db.Uuid
+  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  digest      String    @unique @db.Char(64)
+  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
+  expiresAt   DateTime  @db.Timestamptz(3)
+  redeemedAt  DateTime? @db.Timestamptz(3)
+  revokedAt   DateTime? @db.Timestamptz(3)
+
+  @@index([workspaceId, createdAt, id])
+}
+
+model DailyUsage {
+  workspaceId String      @db.Uuid
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  environment Environment
+  day         DateTime    @db.Date
+  count       Int
+
+  @@id([workspaceId, environment, day])
 }
 
 model Endpoint {
@@ -54,10 +112,11 @@ model Endpoint {
   workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name        String
   destinationUrl String?  @db.VarChar(2048)
+  environment Environment @default(LIVE)
   eventTypes  String[]   @default([])
   deliveries  Delivery[]
 
-  @@unique([workspaceId, destinationUrl])
+  @@unique([workspaceId, environment, destinationUrl])
 }
 
 model Event {
@@ -65,6 +124,7 @@ model Event {
   workspaceId        String     @db.Uuid
   workspace          Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   eventType          String     @db.VarChar(80)
+  environment        Environment @default(LIVE)
   payload            Json
   canonicalBody      String
   requestFingerprint String     @db.Char(64)
@@ -73,7 +133,7 @@ model Event {
   createdAt          DateTime   @default(now()) @db.Timestamptz(3)
   deliveries         Delivery[]
 
-  @@unique([workspaceId, idempotencyKey])
+  @@unique([workspaceId, environment, idempotencyKey])
 }
 
 model ApiKey {
@@ -81,12 +141,13 @@ model ApiKey {
   workspaceId String    @db.Uuid
   workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   name        String    @db.VarChar(80)
+  environment Environment @default(LIVE)
   prefix      String    @db.VarChar(16)
   digest      String    @unique @db.Char(64)
   createdAt   DateTime  @default(now()) @db.Timestamptz(3)
   revokedAt   DateTime? @db.Timestamptz(3)
 
-  @@index([workspaceId, createdAt])
+  @@index([workspaceId, environment, createdAt])
 }
 
 model Delivery {
@@ -132,6 +193,8 @@ model AuditEntry {
   workspaceId String      @db.Uuid
   workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   action      AuditAction
+  environment Environment?
+  actor       String?     @db.VarChar(80)
   targetId    String      @db.Uuid
   summary     String      @db.VarChar(240)
   eventTypes  String[]    @default([])

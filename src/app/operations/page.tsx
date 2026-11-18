@@ -14,8 +14,8 @@ export default async function Page() {
   if (!scope) redirect('/login')
   const database = db()
   const [alerts, audit] = await Promise.all([
-    listAlerts(database, scope.workspaceId, new URLSearchParams(), true),
-    listAudit(database, scope.workspaceId, new URLSearchParams()),
+    listAlerts(database, scope.workspaceId, new URLSearchParams(), true, scope.environment),
+    listAudit(database, scope.workspaceId, new URLSearchParams(), scope.environment),
   ])
-  return <Operations key={scope.workspaceId} initialAlerts={alerts} initialAudit={audit} />
+  return <Operations key={scope.workspaceId + scope.environment} initialAlerts={alerts} initialAudit={audit} />
 }

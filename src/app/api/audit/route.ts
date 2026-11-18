@@ -5,7 +5,7 @@ import { privateSession } from '@/server/operator'
 
 export async function GET(request: Request) {
   return respond(async () => {
-    const { workspaceId } = await privateSession()
-    return json(await listAudit(db(), workspaceId, new URL(request.url).searchParams))
+    const { workspaceId, environment } = await privateSession(request)
+    return json(await listAudit(db(), workspaceId, new URL(request.url).searchParams, environment))
   })
 }
