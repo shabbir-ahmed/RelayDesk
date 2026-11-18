@@ -5,13 +5,14 @@ import { errorMessage, post, requestJson } from './client-http'
 import { CopyButton, InlineError, Modal } from './controls'
 import { Timestamp } from './presentation'
 
-type Key = { id: string; name: string; prefix: string; createdAt: string }
+type Key = { id: string; name: string; prefix: string; createdAt: string; expiresAt: string | null }
 
 export function ApiKeys({ initial }: { initial: Key[] }) {
   const [keys, setKeys] = useState(initial)
   const [name, setName] = useState('')
   const [token, setToken] = useState('')
   const [selected, setSelected] = useState<Key>()
+  const [rotating, setRotating] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState('')
 
@@ -24,6 +25,24 @@ export function ApiKeys({ initial }: { initial: Key[] }) {
       setKeys((previous) => [key, ...previous])
       setToken(token)
       setName('')
+    } catch (error) {
+      setError(errorMessage(error))
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  async function rotate() {
+    if (!selected) return
+    setBusy(true)
+    setError('')
+    try {
+      const { key: { token, ...key }, expiresAt } = await post<{ key: Key & { token: string }; expiresAt: string }>(
+        '/api/keys/' + selected.id + '/rotate',
+      )
+      setKeys((previous) => [key, ...previous.map((entry) => entry.id === selected.id ? { ...entry, expiresAt } : entry)])
+      setSelected(undefined)
+      setToken(token)
     } catch (error) {
       setError(errorMessage(error))
     } finally {
@@ -73,11 +92,20 @@ export function ApiKeys({ initial }: { initial: Key[] }) {
             <div>
               <p className="font-semibold wrap-anywhere">{key.name}</p>
               <p className="muted text-sm"><code>{key.prefix}…</code> · <Timestamp value={key.createdAt} /></p>
+              {key.expiresAt && <p className="muted text-sm">Expires <Timestamp value={key.expiresAt} /></p>}
             </div>
-            <button className="button button-secondary" type="button" onClick={() => {
-              setError('')
-              setSelected(key)
-            }} aria-label={`Revoke ${key.name}`}>Revoke</button>
+            <div className="flex gap-2">
+              {!key.expiresAt && <button className="button button-secondary" type="button" onClick={() => {
+                setError('')
+                setRotating(true)
+                setSelected(key)
+              }} aria-label={`Rotate ${key.name}`}>Rotate</button>}
+              <button className="button button-secondary" type="button" onClick={() => {
+                setError('')
+                setRotating(false)
+                setSelected(key)
+              }} aria-label={`Revoke ${key.name}`}>Revoke</button>
+            </div>
           </li>)}
         </ul>
       </section>
@@ -90,12 +118,14 @@ export function ApiKeys({ initial }: { initial: Key[] }) {
       </div>
       <button type="button" className="button button-secondary" onClick={() => setToken('')}>Done</button>
     </Modal>}
-    {selected && <Modal title="Revoke API key" busy={busy} onClose={() => setSelected(undefined)}>
-      <p className="muted mb-4">Requests using <strong>{selected.name}</strong> will lose access immediately.</p>
+    {selected && <Modal title={rotating ? 'Rotate API key' : 'Revoke API key'} busy={busy} onClose={() => setSelected(undefined)}>
+      <p className="muted mb-4">{rotating
+        ? 'RelayDesk will create a replacement key. The current key will continue working for 24 hours.'
+        : <>Requests using <strong>{selected.name}</strong> will lose access immediately.</>}</p>
       {error && <InlineError message={error} />}
       <div className="modal-actions">
         <button className="button button-secondary" type="button" onClick={() => setSelected(undefined)} disabled={busy}>Cancel</button>
-        <button className="button button-primary" type="button" onClick={revoke} disabled={busy}>Revoke key</button>
+        <button className="button button-primary" type="button" onClick={rotating ? rotate : revoke} disabled={busy}>{rotating ? 'Rotate key' : 'Revoke key'}</button>
       </div>
     </Modal>}
   </main>

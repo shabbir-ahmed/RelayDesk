@@ -38,7 +38,11 @@ function digest(secret: string, metadata: Metadata, body: Uint8Array | string) {
   return createHmac('sha256', secret).update(prefix).update(body).digest()
 }
 
-export function signedHeaders(secret: string, metadata: Metadata, body: string) {
+const secondaryHeader = 'x-relaydesk-signature-secondary'
+const signedDigest = (secret: string, metadata: Metadata, body: Uint8Array | string) =>
+  'v1=' + digest(secret, metadata, body).toString('hex')
+
+export function signedHeaders(secret: string, metadata: Metadata, body: string, secondarySecret?: string) {
   return {
     [headers.eventId]: metadata.eventId,
     [headers.deliveryId]: metadata.deliveryId,
@@ -46,7 +50,8 @@ export function signedHeaders(secret: string, metadata: Metadata, body: string) 
     [headers.attempt]: String(metadata.attempt),
     [headers.timestamp]: String(metadata.timestamp),
     [headers.mode]: metadata.mode,
-    [headers.signature]: 'v1=' + digest(secret, metadata, body).toString('hex'),
+    [headers.signature]: signedDigest(secret, metadata, body),
+    ...(secondarySecret && { [secondaryHeader]: signedDigest(secondarySecret, metadata, body) }),
   }
 }
 
@@ -57,6 +62,8 @@ export function verifySignature(secret: string, requestHeaders: Headers, body: U
   if (!result.success) return null
   const { signature, ...metadata } = result.data
   if (Math.abs(Math.floor(now / 1_000) - metadata.timestamp) > timing.signatureWindowSeconds) return null
-  if (!timingSafeEqual(digest(secret, metadata, body), Buffer.from(signature.slice(3), 'hex'))) return null
-  return metadata
+  const expected = digest(secret, metadata, body)
+  const secondary = requestHeaders.get(secondaryHeader)
+  return [signature, secondary].some((value) => value && /^v1=[0-9a-f]{64}$/.test(value)
+    && timingSafeEqual(expected, Buffer.from(value.slice(3), 'hex'))) ? metadata : null
 }

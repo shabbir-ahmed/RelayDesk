@@ -12,5 +12,5 @@ export default async function Page() {
   const scope = await operatorSession()
   if (!scope || scope.mode !== 'private') redirect('/login')
   const keys = await listApiKeys(db(), scope.workspaceId, scope.environment)
-  return <ApiKeys key={scope.workspaceId + scope.environment} initial={keys.map((entry) => ({ ...entry, createdAt: entry.createdAt.toISOString() }))} />
+  return <ApiKeys key={scope.workspaceId + scope.environment} initial={keys.map((entry) => ({ ...entry, createdAt: entry.createdAt.toISOString(), expiresAt: entry.expiresAt?.toISOString() ?? null }))} />
 }

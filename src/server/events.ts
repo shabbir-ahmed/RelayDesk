@@ -5,7 +5,7 @@ import { z } from 'zod'
 import { receiverModes, type Environment } from '../shared/delivery'
 import { ApiError } from './http'
 import { demoScope } from './demo'
-import { consumeEvent } from './usage'
+import { consumeDeliveries, consumeEvent } from './usage'
 
 const postgresText = (value: string) => !value.includes('\u0000') && value.isWellFormed()
 
@@ -114,6 +114,7 @@ export async function submitEvent(db: PrismaClient, input: Submission, scope: De
       afterEventWrite?.()
       if (workspaceId !== demoScope.workspaceId) await consumeEvent(tx, workspaceId, environment, createdAt)
       const endpoints = await resolveEndpoints(tx, scope, input.eventType)
+      if (workspaceId !== demoScope.workspaceId) await consumeDeliveries(tx, workspaceId, environment, createdAt, endpoints.length)
       const deliveries = endpoints.length ? await tx.delivery.createManyAndReturn({
         data: endpoints.map(({ id }) => ({ eventId: event.id, endpointId: id, receiverMode: input.receiverMode })),
         select: { id: true, endpointId: true },

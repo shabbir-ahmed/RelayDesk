@@ -12,9 +12,9 @@ const nameSchema = z.string().trim().min(1).max(80).refine((name) => !name.inclu
 const workspaceInput = z.object({ slug: workspaceSlug, name: nameSchema, url: z.string().transform(destinationUrl) })
 const destinationSelect = { id: true, name: true, destinationUrl: true, eventTypes: true } as const
 
-export function destinationSecret(key: string, endpointId: string) {
+export function destinationSecret(key: string, endpointId: string, version = 1) {
   return createHmac('sha256', Buffer.from(key, 'hex'))
-    .update('relaydesk-destination-v1:' + endpointId)
+    .update(`relaydesk-destination-v${version}:${endpointId}`)
     .digest('hex')
 }
 
@@ -78,5 +78,22 @@ export async function updateSubscriptions(
     const choice = eventTypes[0] === '*' ? 'all events' : `${eventTypes.length} event ${eventTypes.length === 1 ? 'type' : 'types'}`
     await recordAudit(tx, workspaceId, 'SUBSCRIPTIONS_UPDATED', id, `Workspace operator subscribed ${destination.name} to ${choice}.`, { eventTypes, environment, actor })
     return destination
+  })
+}
+
+export async function rotateDestinationKey(db: PrismaClient, slug: string, endpointId: string, environment: Environment) {
+  return db.$transaction(async (tx) => {
+    const [endpoint] = await tx.$queryRaw<{ workspaceId: string; signingVersion: number; signingOverlapUntil: Date }[]>`
+      UPDATE "Endpoint" e SET "signingVersion" = e."signingVersion" + 1,
+        "signingOverlapUntil" = clock_timestamp() + interval '24 hours'
+      FROM "Workspace" w
+      WHERE w.id = e."workspaceId" AND w.slug = ${slug} AND e.id = ${endpointId}::uuid
+        AND e.environment = ${environment}::"Environment" AND e."destinationUrl" IS NOT NULL
+        AND (e."signingOverlapUntil" IS NULL OR e."signingOverlapUntil" <= clock_timestamp())
+      RETURNING e."workspaceId", e."signingVersion", e."signingOverlapUntil"
+    `
+    if (!endpoint) throw new ApiError(409, 'CONFLICT', 'Destination is unavailable for rotation or already has an active overlap.')
+    await recordAudit(tx, endpoint.workspaceId, 'SIGNING_KEY_ROTATED', endpointId, 'Administrator rotated the destination signing key.', { environment })
+    return endpoint
   })
 }

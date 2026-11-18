@@ -8,7 +8,7 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 25
     steps:
       - uses: actions/checkout@v7
         with:
@@ -26,6 +26,10 @@ jobs:
           docker compose up -d --wait db
           docker compose exec -T db createdb -U relaydesk relaydesk_test
       - run: npm run verify
+      - name: Build both release images
+        run: |
+          docker build --target runtime -t "relaydesk:${GITHUB_SHA}" .
+          docker build --target migration -t "relaydesk-migration:${GITHUB_SHA}" .
       - name: Print database logs if a check fails
         if: failure()
         run: docker compose logs db

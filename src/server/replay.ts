@@ -4,6 +4,7 @@ import { maxReplayCycles } from '../worker/timing'
 import { recordAudit } from './audit'
 import { demoScope } from './demo'
 import { ApiError, missingDelivery } from './http'
+import { consumeDeliveries } from './usage'
 
 export async function replay(
   db: PrismaClient, workspaceId: string, id: string, receiverMode?: ReceiverMode,
@@ -11,6 +12,15 @@ export async function replay(
 ) {
   return db.$transaction(async (tx) => {
     const [{ now }] = await tx.$queryRaw<{ now: Date }[]>`SELECT clock_timestamp() AS now`
+    const [event] = await tx.$queryRaw<{ expired: boolean }[]>`
+      SELECT (e."payloadPurgedAt" IS NOT NULL OR (
+        ${workspaceId !== demoScope.workspaceId} AND e."createdAt" <= statement_timestamp() - interval '720 hours'
+      )) AS expired FROM "Event" e JOIN "Delivery" d ON d."eventId" = e.id
+      WHERE d.id = ${id}::uuid AND e."workspaceId" = ${workspaceId}::uuid AND e.environment = ${environment}::"Environment"
+      FOR UPDATE OF e
+    `
+    if (!event) throw missingDelivery()
+    if (event.expired) throw new ApiError(409, 'CONFLICT', 'The event payload has expired and cannot be replayed.')
     const where = { id, event: { workspaceId, environment } }
     const [queued] = await tx.delivery.updateManyAndReturn({
       where: { ...where, status: 'FAILED', cycle: { lte: maxReplayCycles } },
@@ -22,6 +32,7 @@ export async function replay(
     })
     if (queued) {
       if (workspaceId !== demoScope.workspaceId) {
+        await consumeDeliveries(tx, workspaceId, environment, now, 1)
         await recordAudit(tx, workspaceId, 'DELIVERY_REPLAYED', id, `Workspace operator queued replay cycle ${queued.cycle}.`, { environment, actor })
       }
       return queued

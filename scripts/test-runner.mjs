@@ -12,7 +12,7 @@ if (!['integration', 'e2e', 'verify'].includes(mode)) throw new Error('Choose in
 const test = testDatabaseUrl()
 
 const env = { ...process.env, DATABASE_URL: test, RELAYDESK_TEST_RUN: '1', NEXT_TELEMETRY_DISABLED: '1' }
-for (const name of ['OPERATOR_CREDENTIAL', 'SESSION_SECRET', 'API_TOKEN', 'RECEIVER_SECRET', 'DESTINATION_SIGNING_KEY']) {
+for (const name of ['OPERATOR_CREDENTIAL', 'SESSION_SECRET', 'API_TOKEN', 'RECEIVER_SECRET', 'DESTINATION_SIGNING_KEY', 'OPS_METRICS_TOKEN']) {
   env[name] = randomBytes(32).toString('hex')
 }
 

@@ -2,13 +2,15 @@
 
 ## Current status
 
-`BLOCKED_EXTERNAL`. The local release passed on Docker Engine 29.10.0 for Linux arm64. Hosting is waiting on access to an existing container project, its PostgreSQL connection, and its assigned HTTPS web origin.
+Hosted staging is `BLOCKED_EXTERNAL`. The staging operator needs access to a container project and image registry with permission to deploy the web and worker services, run a migration job, manage secrets and network rules, and configure health checks. The project needs a PostgreSQL connection with backup and restore access, an assigned HTTPS origin, an approved HTTPS smoke receiver that can exercise failure and success, and access to a monitoring collector and operator notification destination.
 
-To unblock hosting, share access to one existing project with permissions to run a one-off migration job and launch two long-running services. Configure its PostgreSQL connection and RelayDesk settings in the host's secret store and supply the assigned web origin. A single project can supply the web, worker, and database.
+Use independent databases, secret-store entries, and origins for staging and production. Keep PostgreSQL and the worker private. The worker needs DNS and outbound HTTPS to approved public destinations. Block worker egress to internal networks and cloud metadata addresses, allowing the private database and required DNS on their service ports. Serve the web app over TLS.
+
+See the [production pilot runbook](production-pilot.md) for the release gate, alerts, recovery drills, and key rotation.
 
 ## Containers
 
-Build the common application image and the migration target from the same source revision. The runtime image packages the Next.js standalone server and the compiled TypeScript worker.
+Build the common application image and the migration target from the same source revision. CI runs `npm run verify` and builds both targets. Tag deployment images by commit and record the image digests. The runtime image packages the Next.js standalone server and the compiled TypeScript worker.
 
 ```sh
 docker build --target runtime -t relaydesk:release .
@@ -37,6 +39,7 @@ Start the worker after the web health probe passes. Provision private workspaces
 | `RECEIVER_BASE_URL` | Demo worker | Fixed web-service origin reachable from the worker, without a path or trailing slash |
 | `RECEIVER_SECRET` | Demo web and worker | Same random 32–256 character HMAC secret on both services |
 | `OPERATOR_CREDENTIAL` | Demo web | Random shared operator credential, 12–256 characters |
+| `OPS_METRICS_TOKEN` | Web, monitoring collector | Separate 32-byte hex key used to scrape `/api/ops/metrics` |
 | `SESSION_SECRET` | Web | Random 32-byte hex key in private mode, or a 32–256 character secret in demo mode |
 | `API_TOKEN` | Demo web, demo smoke CLI | Independent random 32–256 character API credential |
 | `PORT` and `HOSTNAME` | Web | Container defaults are port 3000 and all interfaces |

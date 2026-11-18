@@ -15,10 +15,11 @@ const ttlSeconds = 4 * 60 * 60
 const issuer = 'relaydesk'
 const environmentSchema = z.enum(environments)
 
+type NamedAccount = { accountId: string; memberSessionId: string; sessionVersion: number }
 type PrivateSession = {
-  mode: 'private'; workspaceId: string; environment: Environment; accountId?: string
-  role: 'OWNER' | 'MEMBER'; actor: string
-}
+  mode: 'private'; workspaceId: string; environment: Environment; role: 'OWNER' | 'MEMBER'; actor: string
+} & (NamedAccount | { accountId?: undefined })
+type SessionSelection = { workspaceId: string; environment: Environment } & (NamedAccount | { accountId?: undefined })
 type SessionScope = typeof demoScope | PrivateSession
 type SubmissionScope = typeof demoScope | Pick<PrivateSession, 'mode' | 'workspaceId' | 'environment'>
 
@@ -62,17 +63,26 @@ export const operatorSession = cache(async function operatorSession(config?: Ret
   const accountId = account.data
   const member = await db().membership.findUnique({
     where: { workspaceId_accountId: { workspaceId, accountId } },
-    select: { role: true, account: { select: { username: true } } },
+    select: { role: true, sessionId: true, account: { select: { username: true, sessionVersion: true } } },
   })
-  return member ? { mode: 'private', workspaceId, environment, accountId, role: member.role, actor: member.account.username } : null
+  if (!member || member.sessionId !== payload.memberSessionId || member.account.sessionVersion !== payload.sessionVersion) return null
+  return {
+    mode: 'private', workspaceId, environment, accountId, role: member.role, actor: member.account.username,
+    memberSessionId: member.sessionId, sessionVersion: member.account.sessionVersion,
+  }
 })
 
 export async function beginSession(
-  config: ReturnType<typeof webEnv>, workspace?: { workspaceId: string; environment: Environment; accountId?: string },
+  config: ReturnType<typeof webEnv>, workspace?: SessionSelection,
 ) {
   const { name, key, options } = sessionConfig(config)
   const claims = workspace
-    ? { workspaceId: workspace.workspaceId, environment: workspace.environment, accountId: workspace.accountId }
+    ? {
+      workspaceId: workspace.workspaceId, environment: workspace.environment,
+      ...(workspace.accountId !== undefined && {
+        accountId: workspace.accountId, memberSessionId: workspace.memberSessionId, sessionVersion: workspace.sessionVersion,
+      }),
+    }
     : {}
   const token = await new EncryptJWT(claims)
     .setProtectedHeader({ alg: 'dir', enc: 'A256GCM' })
@@ -142,6 +152,6 @@ export async function privateSession(request?: Request) {
 
 export function requireOwner(scope: SessionScope): asserts scope is PrivateSession {
   if (scope.mode !== 'private' || scope.role !== 'OWNER') {
-    throw new ApiError(403, 'FORBIDDEN', 'Only workspace owners can manage invitations.')
+    throw new ApiError(403, 'FORBIDDEN', 'Only workspace owners can perform this action.')
   }
 }

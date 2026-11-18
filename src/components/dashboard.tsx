@@ -62,6 +62,7 @@ export function Dashboard({ operator, initial, workspaceName, destinations, envi
       <div>
         <h2 id="event-usage" className="font-semibold">Daily event usage</h2>
         <p className="muted text-sm">{usage.used.toLocaleString()} of {usage.limit.toLocaleString()} · Resets at midnight UTC</p>
+        <p className="muted text-sm">{usage.deliveries.used.toLocaleString()} of {usage.deliveries.limit.toLocaleString()} deliveries used</p>
       </div>
       <progress aria-label="Daily event usage" className="w-44 max-w-full accent-indigo-600"
         value={Math.min(usage.used, usage.limit)} max={usage.limit} />

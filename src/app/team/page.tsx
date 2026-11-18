@@ -15,15 +15,15 @@ export default async function TeamPage() {
   const [members, invitations, legacyWorkspace] = await Promise.all([
     database.membership.findMany({
       where: { workspaceId: scope.workspaceId },
-      select: { role: true, account: { select: { username: true } } },
+      select: { accountId: true, role: true, account: { select: { username: true } } },
       orderBy: [{ createdAt: 'asc' }, { accountId: 'asc' }],
     }),
     scope.role === 'OWNER' ? listInvitations(database, scope.workspaceId) : [],
     database.workspace.count({ where: { id: scope.workspaceId, credentialDigest: { not: null } } }),
   ])
   const now = new Date()
-  return <Team key={scope.workspaceId} members={members.map(({ account, role }) => ({ username: account.username, role }))}
-    owner={scope.role === 'OWNER'} legacy={legacyWorkspace > 0} initial={invitations.map((invite) => ({
+  return <Team key={scope.workspaceId} members={members.map(({ accountId, account, role }) => ({ id: accountId, username: account.username, role }))}
+    owner={scope.role === 'OWNER'} named={scope.accountId !== undefined} legacy={legacyWorkspace > 0} initial={invitations.map((invite) => ({
       ...invite, expired: invite.expiresAt <= now, createdAt: invite.createdAt.toISOString(), expiresAt: invite.expiresAt.toISOString(),
       redeemedAt: invite.redeemedAt?.toISOString() ?? null, revokedAt: invite.revokedAt?.toISOString() ?? null,
     }))} />

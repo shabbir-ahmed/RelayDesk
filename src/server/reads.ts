@@ -52,7 +52,7 @@ export async function deliveryDetail(db: PrismaClient, workspaceId: string, id: 
     select: {
       ...listSelect,
       receiverMode: true, nextAttemptAt: true, leaseExpiresAt: true,
-      event: { select: { id: true, eventType: true, payload: true, createdAt: true, isTest: true } },
+      event: { select: { id: true, eventType: true, payload: true, payloadPurgedAt: true, createdAt: true, isTest: true } },
       endpoint: { select: { name: true, destinationUrl: true } },
       attempts: {
         orderBy: [{ cycle: 'asc' }, { attemptNumber: 'asc' }],
@@ -65,12 +65,13 @@ export async function deliveryDetail(db: PrismaClient, workspaceId: string, id: 
     },
   })
   if (!row) return null
+  const { payloadPurgedAt, ...event } = row.event
   return {
     ...row,
     createdAt: row.createdAt.toISOString(),
     nextAttemptAt: row.nextAttemptAt?.toISOString() ?? null,
     leaseExpiresAt: row.leaseExpiresAt?.toISOString() ?? null,
-    event: { ...row.event, createdAt: row.event.createdAt.toISOString() },
+    event: { ...event, createdAt: event.createdAt.toISOString(), ...(payloadPurgedAt && { payloadPurgedAt: payloadPurgedAt.toISOString() }) },
     attempts: row.attempts.map((attempt) => ({
       ...attempt, startedAt: attempt.startedAt.toISOString(), completedAt: attempt.completedAt?.toISOString() ?? null,
     })),

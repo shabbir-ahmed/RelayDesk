@@ -6,7 +6,7 @@ import { join } from 'node:path'
 import { verifySignature } from '../../src/server/signing'
 import type { sendApproved } from '../../src/worker/send-approved'
 
-export async function betaReceiver(secrets: Map<string, string>) {
+export async function betaReceiver(secrets: Map<string, string>, statusForPath?: (path: string) => Promise<number>) {
   const folder = await mkdtemp(join(tmpdir(), 'relaydesk-https-test-'))
   const messages: { path: string; body: string; event: string; cycle: number }[] = []
   const config = join(folder, 'openssl.cnf')
@@ -45,7 +45,8 @@ export async function betaReceiver(secrets: Map<string, string>) {
       }
       const body = bytes.toString()
       messages.push({ path, body, event: metadata.eventId, cycle: metadata.cycle })
-      response.writeHead(JSON.parse(body).test && metadata.cycle === 1 ? 422 : 200).end()
+      const status = statusForPath ? await statusForPath(path) : JSON.parse(body).test && metadata.cycle === 1 ? 422 : 200
+      response.writeHead(status).end()
     } catch {
       response.writeHead(500).end()
     }

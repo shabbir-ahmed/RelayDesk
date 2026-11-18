@@ -83,3 +83,13 @@
 - `npm run verify` passed lint, type checking, the production build, 33 unit tests, 21 PostgreSQL integration tests, and four Chromium journeys. Checks covered concurrent invitation redemption, expired and revoked links, environment isolation and stale-tab protection, and atomic quota charging under concurrent submissions.
 - An isolated upgrade from Phase 2 preserved existing records and API keys in Live, retained the legacy workspace access code, and initialized usage from the current UTC day. Prisma reported no schema drift. The compiled CLI approved the same HTTPS URL in Test and Live with separate signing secrets.
 - [Private beta setup](docs/private-beta.md) documents setup, invitation sharing, and the daily limits.
+
+## Production pilot · Phase 4
+
+- Local release gate passed. `npm run verify` passed lint, type checking, the production build, 34 unit tests, 27 PostgreSQL integration tests, and five Chromium journeys.
+- Added shared PostgreSQL auth throttling, recovery codes and session revocation, API and destination signing rotation, and the Phase 4 migration. The compiled destination rotation command produced a new key with a 24-hour overlap.
+- Added per-destination worker concurrency, delivery quotas, retry jitter and bounded `Retry-After`, payload retention, and protected worker and queue metrics. CI builds the runtime and migration images after verification. [Production pilot runbook](docs/production-pilot.md) records the staging gate.
+- Local Docker Engine 29.9.3 built both Linux arm64 images. An isolated Compose project passed migration, web signup, authenticated metrics, and worker startup and restart. Prometheus validated six alert rules.
+- A Phase 3 upgrade and rollback rehearsal preserved an existing key, payload and attempt history, and backfilled delivery usage. Prisma reported no schema drift. A PostgreSQL base backup plus archived WAL restored to a named point on a separate instance.
+- A local two-worker HTTPS burst delivered 40 healthy requests while six deliveries were queued for a slow receiver. Healthy p95 queue wait was 1.083 seconds.
+- Hosted staging remains `BLOCKED_EXTERNAL`. [Deployment instructions](docs/deployment.md) list the required container project, registry, database, TLS origin, smoke receiver, and alerting access.

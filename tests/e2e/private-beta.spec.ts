@@ -266,3 +266,95 @@ test('self-service signup, ownership and environment isolation work end to end',
     await database.$disconnect()
   }
 })
+
+test('pilot owners remove members, rotate keys, and recover a named account', async ({ page, browser, request }) => {
+  const database = testDb()
+  const id = randomUUID().slice(0, 8)
+  const slug = 'pilot-' + id
+  const username = 'owner-' + id
+  const member = 'member-' + id
+  const password = 'local-owner-sample-password'
+  const recoveredPassword = 'local-replacement-sample-password'
+  const headers = { origin }
+  const guest = await browser.newContext({ baseURL: origin })
+  const oldOwnerSession = await browser.newContext({ baseURL: origin })
+  try {
+    expect((await page.request.post('/api/signup', {
+      headers, data: { workspace: slug, username, password, name: 'Production pilot' },
+    })).status()).toBe(201)
+    expect((await oldOwnerSession.request.post('/api/operator/login', {
+      headers, data: { workspace: slug, username, credential: password },
+    })).status()).toBe(200)
+    const invite = async () => {
+      const response = await page.request.post('/api/invitations', { headers })
+      expect(response.status()).toBe(201)
+      return new URL((await response.json()).link).hash.slice(1)
+    }
+    const join = async (token: string) => {
+      expect((await guest.request.post('/api/invitations/redeem', {
+        headers, data: { username: member, password, token },
+      })).status()).toBe(200)
+    }
+    await join(await invite())
+    const oldCookie = (await guest.cookies())[0]
+    await page.goto('/team')
+    await expect(page.getByText(member, { exact: true })).toBeVisible()
+    await page.getByRole('button', { name: 'Remove ' + member }).click()
+    await page.getByRole('button', { name: 'Remove member', exact: true }).click()
+    await expect(page.getByText(member, { exact: true })).toHaveCount(0)
+    expect((await guest.request.get('/api/deliveries')).status()).toBe(401)
+    await join(await invite())
+    expect((await guest.request.get('/api/deliveries')).status()).toBe(200)
+    expect((await request.get('/api/deliveries', { headers: { cookie: oldCookie.name + '=' + oldCookie.value } })).status()).toBe(401)
+
+    const keyResponse = await page.request.post('/api/keys', { headers, data: { name: 'Pilot event source' } })
+    expect(keyResponse.status()).toBe(201)
+    const key = await keyResponse.json()
+    await page.goto('/keys')
+    await page.getByRole('button', { name: 'Rotate Pilot event source' }).click()
+    await page.getByRole('button', { name: 'Rotate key', exact: true }).click()
+    const replacement = await page.getByTestId('new-api-key').innerText()
+    const send = (token: string) => request.post('/api/events', {
+      headers: { authorization: 'Bearer ' + token },
+      data: { eventType: 'pilot.rotation', idempotencyKey: randomUUID(), payload: {} },
+    })
+    expect((await send(key.token)).status()).toBe(201)
+    expect((await send(replacement)).status()).toBe(201)
+    await database.apiKey.update({ where: { id: key.id }, data: { expiresAt: new Date(0) } })
+    expect((await send(key.token)).status()).toBe(401)
+    expect((await send(replacement)).status()).toBe(201)
+
+    await page.goto('/team')
+    await page.getByRole('button', { name: 'Generate recovery code' }).click()
+    await page.getByLabel('Current password').fill(password)
+    await page.getByRole('button', { name: 'Generate code', exact: true }).click()
+    const code = await page.getByRole('dialog').locator('code').innerText()
+    await page.getByRole('button', { name: 'Done', exact: true }).click()
+    await page.getByRole('button', { name: 'Sign out' }).click()
+    await expect(page).toHaveURL(/\/login$/)
+    await page.getByRole('link', { name: 'Forgot your password?' }).click()
+    await expect(page.getByRole('heading', { name: 'Reset your password' })).toBeVisible()
+    await page.getByLabel('Recovery code', { exact: true }).fill(code)
+    await page.getByLabel('New password').fill(recoveredPassword)
+    await page.getByLabel('Username').fill(username)
+    await page.getByRole('button', { name: 'Reset password', exact: true }).click()
+    await expect(page).toHaveURL(/\/login$/)
+    expect((await oldOwnerSession.request.get('/api/deliveries')).status()).toBe(401)
+    expect((await request.post('/api/account/recover', {
+      headers, data: { username, code, password },
+    })).status()).toBe(401)
+    expect((await page.request.post('/api/operator/login', {
+      headers, data: { workspace: slug, username, credential: password },
+    })).status()).toBe(401)
+    await signIn(page, slug, recoveredPassword, username)
+
+    const url = '/api/ops/metrics'
+    expect((await request.get(url)).status()).toBe(401)
+    expect((await request.get(url, { headers: { authorization: 'Bearer ' + replacement } })).status()).toBe(401)
+    const observed = await request.get(url, { headers: { authorization: 'Bearer ' + process.env.OPS_METRICS_TOKEN } })
+    expect(observed.status()).toBe(200)
+    expect(await observed.text()).toContain('relaydesk_queue_oldest_ready_seconds')
+  } finally {
+    await Promise.all([guest.close(), oldOwnerSession.close(), database.$disconnect()])
+  }
+})

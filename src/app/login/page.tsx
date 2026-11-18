@@ -20,6 +20,7 @@ export default async function Login() {
           ? 'Sign in to submit synthetic events and replay failed deliveries.'
           : 'Enter your workspace slug and credentials.'}</p>
         <LoginForm demo={demo} />
+        {!demo && <p className="mt-5 text-sm"><Link className="table-link" href="/recover">Forgot your password?</Link></p>}
         {!demo && <p className="muted mt-5 text-sm">New to RelayDesk? <Link className="table-link" href="/signup">Create a workspace</Link></p>}
       </div>
     </div>

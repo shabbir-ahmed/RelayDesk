@@ -38,6 +38,9 @@ enum AuditAction {
   INVITE_CREATED
   INVITE_ACCEPTED
   INVITE_REVOKED
+  MEMBER_REMOVED
+  API_KEY_ROTATED
+  SIGNING_KEY_ROTATED
 }
 
 enum Environment {
@@ -65,10 +68,12 @@ model Workspace {
 }
 
 model Account {
-  id           String       @id @default(uuid()) @db.Uuid
-  username     String       @unique @db.VarChar(60)
-  passwordHash String       @db.VarChar(160)
-  memberships  Membership[]
+  id             String       @id @default(uuid()) @db.Uuid
+  username       String       @unique @db.VarChar(60)
+  passwordHash   String       @db.VarChar(160)
+  sessionVersion Int          @default(0)
+  recoveryDigest String?      @db.Char(64)
+  memberships    Membership[]
 }
 
 model Membership {
@@ -76,6 +81,7 @@ model Membership {
   workspace   Workspace     @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
   accountId   String        @db.Uuid
   account     Account       @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  sessionId   String        @default(dbgenerated("gen_random_uuid()")) @db.Uuid
   role        WorkspaceRole
   createdAt   DateTime      @default(now()) @db.Timestamptz(3)
 
@@ -102,75 +108,82 @@ model DailyUsage {
   environment Environment
   day         DateTime    @db.Date
   count       Int
+  deliveries  Int         @default(0)
 
   @@id([workspaceId, environment, day])
 }
 
 model Endpoint {
-  id          String     @id @default(uuid()) @db.Uuid
-  workspaceId String     @db.Uuid
-  workspace   Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  name        String
-  destinationUrl String?  @db.VarChar(2048)
-  environment Environment @default(LIVE)
-  eventTypes  String[]   @default([])
-  deliveries  Delivery[]
+  id                  String      @id @default(uuid()) @db.Uuid
+  workspaceId         String      @db.Uuid
+  workspace           Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name                String
+  destinationUrl      String?     @db.VarChar(2048)
+  environment         Environment @default(LIVE)
+  eventTypes          String[]    @default([])
+  signingVersion      Int         @default(1)
+  signingOverlapUntil DateTime?   @db.Timestamptz(3)
+  deliveries          Delivery[]
 
   @@unique([workspaceId, environment, destinationUrl])
 }
 
 model Event {
-  id                 String     @id @default(uuid()) @db.Uuid
-  workspaceId        String     @db.Uuid
-  workspace          Workspace  @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  eventType          String     @db.VarChar(80)
+  id                 String      @id @default(uuid()) @db.Uuid
+  workspaceId        String      @db.Uuid
+  workspace          Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  eventType          String      @db.VarChar(80)
   environment        Environment @default(LIVE)
   payload            Json
   canonicalBody      String
-  requestFingerprint String     @db.Char(64)
-  idempotencyKey     String     @db.VarChar(128)
-  isTest             Boolean    @default(false)
-  createdAt          DateTime   @default(now()) @db.Timestamptz(3)
+  payloadPurgedAt    DateTime?   @db.Timestamptz(3)
+  requestFingerprint String      @db.Char(64)
+  idempotencyKey     String      @db.VarChar(128)
+  isTest             Boolean     @default(false)
+  createdAt          DateTime    @default(now()) @db.Timestamptz(3)
   deliveries         Delivery[]
 
   @@unique([workspaceId, environment, idempotencyKey])
+  @@index([payloadPurgedAt, createdAt])
 }
 
 model ApiKey {
-  id          String    @id @default(uuid()) @db.Uuid
-  workspaceId String    @db.Uuid
-  workspace   Workspace @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
-  name        String    @db.VarChar(80)
+  id          String      @id @default(uuid()) @db.Uuid
+  workspaceId String      @db.Uuid
+  workspace   Workspace   @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  name        String      @db.VarChar(80)
   environment Environment @default(LIVE)
-  prefix      String    @db.VarChar(16)
-  digest      String    @unique @db.Char(64)
-  createdAt   DateTime  @default(now()) @db.Timestamptz(3)
-  revokedAt   DateTime? @db.Timestamptz(3)
+  prefix      String      @db.VarChar(16)
+  digest      String      @unique @db.Char(64)
+  createdAt   DateTime    @default(now()) @db.Timestamptz(3)
+  revokedAt   DateTime?   @db.Timestamptz(3)
+  expiresAt   DateTime?   @db.Timestamptz(3)
 
   @@index([workspaceId, environment, createdAt])
 }
 
 model Delivery {
-  id                   String            @id @default(uuid()) @db.Uuid
-  eventId              String            @db.Uuid
-  event                Event             @relation(fields: [eventId], references: [id], onDelete: Restrict)
-  endpointId           String            @db.Uuid
-  endpoint             Endpoint          @relation(fields: [endpointId], references: [id], onDelete: Restrict)
-  status               DeliveryStatus    @default(PENDING)
-  cycle                Int               @default(1)
-  attemptsInCycle      Int               @default(0)
-  nextAttemptAt        DateTime?         @default(dbgenerated("date_trunc('milliseconds'::text, CURRENT_TIMESTAMP)")) @db.Timestamptz(3)
-  leaseToken           String?           @db.Uuid
-  leaseExpiresAt       DateTime?         @db.Timestamptz(3)
-  receiverMode         ReceiverMode
-  historical           Boolean           @default(false)
-  createdAt            DateTime          @default(now()) @db.Timestamptz(3)
-  updatedAt            DateTime          @updatedAt @db.Timestamptz(3)
-  attempts             DeliveryAttempt[]
-  alerts               FailureAlert[]
+  id              String            @id @default(uuid()) @db.Uuid
+  eventId         String            @db.Uuid
+  event           Event             @relation(fields: [eventId], references: [id], onDelete: Restrict)
+  endpointId      String            @db.Uuid
+  endpoint        Endpoint          @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+  status          DeliveryStatus    @default(PENDING)
+  cycle           Int               @default(1)
+  attemptsInCycle Int               @default(0)
+  nextAttemptAt   DateTime?         @default(dbgenerated("date_trunc('milliseconds'::text, CURRENT_TIMESTAMP)")) @db.Timestamptz(3)
+  leaseToken      String?           @db.Uuid
+  leaseExpiresAt  DateTime?         @db.Timestamptz(3)
+  receiverMode    ReceiverMode
+  historical      Boolean           @default(false)
+  createdAt       DateTime          @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime          @updatedAt @db.Timestamptz(3)
+  attempts        DeliveryAttempt[]
+  alerts          FailureAlert[]
 
   @@unique([eventId, endpointId])
   @@index([status, nextAttemptAt, id])
+  @@index([endpointId, status])
   @@index([status, leaseExpiresAt])
   @@index([createdAt, id])
 }
@@ -186,6 +199,7 @@ model FailureAlert {
 
   @@unique([deliveryId, cycle])
   @@index([acknowledgedAt, createdAt, id])
+  @@index([createdAt])
 }
 
 model AuditEntry {
@@ -220,4 +234,15 @@ model DeliveryAttempt {
 
   @@unique([deliveryId, cycle, attemptNumber])
   @@index([completedAt])
+}
+
+model AuthLimit {
+  key         String   @id
+  windowStart DateTime @db.Timestamptz(3)
+  count       Int
+}
+
+model WorkerHeartbeat {
+  mode   String   @id
+  seenAt DateTime @db.Timestamptz(3)
 }
