@@ -8,7 +8,7 @@ RelayDesk delivers signed webhooks to approved HTTPS destinations. Send an event
 
 ## Run the private beta
 
-Private mode is the default. Run the web app, worker, and PostgreSQL with Docker Compose, then create a workspace and have an administrator approve a Test destination. The guide includes the environment settings, provisioning command, and event API. [Private beta setup](docs/private-beta.md)
+Private mode is the default. Run the web app, worker, and PostgreSQL with Docker Compose, then create a workspace and request a Test destination for administrator approval. The guide includes the environment settings, provisioning command, and event API. [Private beta setup](docs/private-beta.md)
 
 ## Run the isolated demo
 

@@ -1,5 +1,5 @@
 import { createHmac } from 'node:crypto'
-import type { PrismaClient } from '@prisma/client'
+import type { Prisma, PrismaClient } from '@prisma/client'
 import type { Environment } from '../shared/delivery'
 import { z } from 'zod'
 import { recordAudit } from './audit'
@@ -8,8 +8,8 @@ import { destinationUrl } from './destinations'
 import { ApiError } from './http'
 
 export const workspaceSlug = z.string().min(2).max(60).regex(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-const nameSchema = z.string().trim().min(1).max(80).refine((name) => !name.includes('\u0000') && name.isWellFormed())
-const workspaceInput = z.object({ slug: workspaceSlug, name: nameSchema, url: z.string().transform(destinationUrl) })
+export const destinationNameSchema = z.string().trim().min(1).max(80).refine((name) => !name.includes('\u0000') && name.isWellFormed())
+const workspaceInput = z.object({ slug: workspaceSlug, name: destinationNameSchema, url: z.string().transform(destinationUrl) })
 const destinationSelect = { id: true, name: true, destinationUrl: true, eventTypes: true } as const
 
 export function destinationSecret(key: string, endpointId: string, version = 1) {
@@ -42,13 +42,32 @@ export async function approveDestination(db: PrismaClient, input: { slug: string
   return db.$transaction(async (tx) => {
     const workspace = await tx.workspace.findUnique({ where: { slug }, select: { id: true } })
     if (!workspace) throw new ApiError(404, 'NOT_FOUND', 'Workspace not found.')
-    const destination = await tx.endpoint.create({
-      data: { workspaceId: workspace.id, name, environment, destinationUrl: url.href },
-      select: destinationSelect,
-    })
-    await recordAudit(tx, workspace.id, 'DESTINATION_APPROVED', destination.id, `Administrator approved ${name}.`, { environment })
-    return destination
+    await lockWorkspaceDestinations(tx, workspace.id)
+    return saveApprovedDestination(tx, workspace.id, environment, name, url.href)
   })
+}
+
+// Serialize changes that span the request and approved destination tables.
+export async function lockWorkspaceDestinations(tx: Prisma.TransactionClient, workspaceId: string) {
+  const [workspace] = await tx.$queryRaw<{ id: string }[]>`
+    SELECT id FROM "Workspace" WHERE id = ${workspaceId}::uuid AND slug IS NOT NULL FOR NO KEY UPDATE
+  `
+  if (!workspace) throw new ApiError(404, 'NOT_FOUND', 'Workspace not found.')
+}
+
+export async function saveApprovedDestination(
+  tx: Prisma.TransactionClient, workspaceId: string, environment: Environment, name: string, destinationUrl: string,
+) {
+  const destination = await tx.endpoint.create({
+    data: { workspaceId, name, environment, destinationUrl },
+    select: destinationSelect,
+  })
+  await tx.destinationRequest.updateMany({
+    where: { workspaceId, environment, destinationUrl, status: 'PENDING' },
+    data: { status: 'APPROVED', reviewedAt: new Date(), endpointId: destination.id },
+  })
+  await recordAudit(tx, workspaceId, 'DESTINATION_APPROVED', destination.id, `Administrator approved ${name}.`, { environment })
+  return destination
 }
 
 export function workspaceDestinations(db: PrismaClient, workspaceId: string, environment: Environment = 'LIVE') {

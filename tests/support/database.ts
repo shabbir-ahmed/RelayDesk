@@ -20,6 +20,7 @@ export async function prepareDatabase() {
     database.delivery.deleteMany(),
     database.event.deleteMany(),
     database.apiKey.deleteMany(),
+    database.destinationRequest.deleteMany(),
     database.endpoint.deleteMany({ where: { destinationUrl: { not: null } } }),
     database.dailyUsage.deleteMany(),
     database.invitation.deleteMany(),

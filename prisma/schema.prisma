@@ -41,11 +41,19 @@ enum AuditAction {
   MEMBER_REMOVED
   API_KEY_ROTATED
   SIGNING_KEY_ROTATED
+  DESTINATION_REQUESTED
+  DESTINATION_REQUEST_REJECTED
 }
 
 enum Environment {
   TEST
   LIVE
+}
+
+enum DestinationRequestStatus {
+  PENDING
+  APPROVED
+  REJECTED
 }
 
 enum WorkspaceRole {
@@ -59,6 +67,7 @@ model Workspace {
   slug             String?    @unique @db.VarChar(60)
   credentialDigest String?    @db.Char(64)
   endpoints        Endpoint[]
+  destinationRequests DestinationRequest[]
   events           Event[]
   apiKeys          ApiKey[]
   auditEntries     AuditEntry[]
@@ -124,8 +133,29 @@ model Endpoint {
   signingVersion      Int         @default(1)
   signingOverlapUntil DateTime?   @db.Timestamptz(3)
   deliveries          Delivery[]
+  requests            DestinationRequest[]
 
   @@unique([workspaceId, environment, destinationUrl])
+}
+
+model DestinationRequest {
+  id             String                   @id @default(uuid()) @db.Uuid
+  workspaceId    String                   @db.Uuid
+  workspace      Workspace                @relation(fields: [workspaceId], references: [id], onDelete: Restrict)
+  environment    Environment
+  name           String                   @db.VarChar(80)
+  destinationUrl String                   @db.VarChar(2048)
+  status         DestinationRequestStatus @default(PENDING)
+  createdAt      DateTime                 @default(now()) @db.Timestamptz(3)
+  reviewedAt     DateTime?                @db.Timestamptz(3)
+  reviewNote     String?                  @db.VarChar(240)
+  endpointId     String?                  @db.Uuid
+  endpoint       Endpoint?                @relation(fields: [endpointId], references: [id], onDelete: Restrict)
+
+  @@index([workspaceId, environment, destinationUrl, status], map: "DestinationRequest_lookup_idx")
+  @@index([workspaceId, environment, createdAt, id])
+  @@index([status, createdAt, id])
+  @@index([endpointId])
 }
 
 model Event {
