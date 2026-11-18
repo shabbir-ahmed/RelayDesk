@@ -1,5 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import { expect, test, type Page } from '@playwright/test'
+import { approveRequestedDestination } from '../../src/server/destination-requests'
 import { demoScope } from '../../src/server/demo'
 import { submitEvent } from '../../src/server/events'
 import { approveDestination, destinationSecret, provisionWorkspace, updateSubscriptions } from '../../src/server/workspaces'
@@ -356,5 +357,65 @@ test('pilot owners remove members, rotate keys, and recover a named account', as
     expect(await observed.text()).toContain('relaydesk_queue_oldest_ready_seconds')
   } finally {
     await Promise.all([guest.close(), oldOwnerSession.close(), database.$disconnect()])
+  }
+})
+
+test('owners submit destination requests and see approvals only in the selected environment', async ({ page, browser }) => {
+  const database = testDb()
+  const suffix = randomUUID().slice(0, 8)
+  const password = 'local-destination-owner-password'
+  const headers = { origin }
+  const scope = { workspace: 'onboarding-' + suffix, username: 'onboarding-owner-' + suffix, password, name: 'Onboarding team' }
+  const invitee = await browser.newContext({ baseURL: origin })
+  const path = '/api/destinations/requests'
+  const name = 'Early billing receiver'
+  const url = 'https://alpha.receiver.test/early-billing'
+  try {
+    expect((await page.request.post('/api/signup', { headers, data: scope })).status()).toBe(201)
+    const invite = await page.request.post('/api/invitations', { headers })
+    expect(invite.status()).toBe(201)
+    const token = new URL((await invite.json()).link).hash.slice(1)
+    expect((await invitee.request.post('/api/invitations/redeem', {
+      headers, data: { username: 'onboarding-member-' + suffix, password, token },
+    })).status()).toBe(200)
+    expect((await invitee.request.post(path, { headers, data: { name, url } })).status()).toBe(403)
+
+    await page.goto('/destinations')
+    await page.getByRole('button', { name: 'Request destination', exact: true }).click()
+    const form = page.getByRole('dialog', { name: 'Request a Test destination' })
+    await form.getByLabel('Destination name').fill(name)
+    await form.getByLabel('HTTPS endpoint URL').fill('http://alpha.receiver.test')
+    await form.getByRole('button', { name: 'Submit request' }).click()
+    await expect(form.getByRole('alert')).toHaveText(/public HTTPS/)
+    await form.getByLabel('HTTPS endpoint URL').fill(url)
+    await form.getByRole('button', { name: 'Submit request' }).click()
+    await expect(page.getByRole('status')).toHaveText('Destination request submitted.')
+    const requests = page.getByRole('region', { name: 'Destination requests' })
+    await expect(requests.getByText('Pending review')).toBeVisible()
+    await expect(page.getByRole('button', { name: 'Send test event' })).toHaveCount(0)
+
+    await switchEnvironment(page, 'LIVE')
+    await expect(requests.getByText(name)).toHaveCount(0)
+    expect((await page.request.post(path, {
+      headers: { ...headers, 'X-RelayDesk-Environment': 'TEST' }, data: { name, url },
+    })).status()).toBe(409)
+
+    const pending = await database.destinationRequest.findFirstOrThrow({
+      where: { environment: 'TEST', workspace: { slug: scope.workspace } },
+    })
+    await approveRequestedDestination(database, pending.id, async () => [{ address: '1.1.1.1', family: 4 }])
+    await switchEnvironment(page, 'TEST')
+    await page.getByRole('button', { name: 'Refresh requests' }).click()
+    await expect(requests.getByText('Approved', { exact: true })).toBeVisible()
+    await expect(page.getByRole('region', { name }).getByRole('button', { name: 'Send test event' })).toBeVisible()
+
+    const memberPage = await invitee.newPage()
+    await memberPage.goto('/destinations')
+    await expect(memberPage.getByRole('region', { name })).toBeVisible()
+    await expect(memberPage.getByRole('button', { name: 'Request destination', exact: true })).toHaveCount(0)
+    await expect(memberPage.getByRole('region', { name: 'Destination requests' })).toHaveCount(0)
+  } finally {
+    await invitee.close()
+    await database.$disconnect()
   }
 })

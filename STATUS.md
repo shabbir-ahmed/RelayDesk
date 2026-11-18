@@ -93,3 +93,10 @@
 - A Phase 3 upgrade and rollback rehearsal preserved an existing key, payload and attempt history, and backfilled delivery usage. Prisma reported no schema drift. A PostgreSQL base backup plus archived WAL restored to a named point on a separate instance.
 - A local two-worker HTTPS burst delivered 40 healthy requests while six deliveries were queued for a slow receiver. Healthy p95 queue wait was 1.083 seconds.
 - Hosted staging remains `BLOCKED_EXTERNAL`. [Deployment instructions](docs/deployment.md) list the required container project, registry, database, TLS origin, smoke receiver, and alerting access.
+
+## Destination onboarding
+
+- Owners can request HTTPS destinations in Test and Live and track review decisions. Administrators can list, approve, and reject requests from the deployment terminal. Approval keeps the existing DNS policy and creates an endpoint with an empty subscription list.
+- [Private beta guide](docs/private-beta.md#add-a-destination-and-configure-subscriptions) covers the owner flow and administrator commands.
+- `npm run verify` passed the production build, lint, type checking, 34 unit tests, 30 PostgreSQL integration tests, and six Chromium journeys. Coverage includes environment isolation, owner permissions, duplicate requests, and concurrent review decisions.
+- A Phase 4 upgrade preserved existing routing and idempotent receipts. Prisma reported no schema drift. The compiled administrator command listed, approved, and rejected requests using a local DNS fixture.

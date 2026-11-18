@@ -24,6 +24,7 @@
     "verify": "node scripts/test-runner.mjs verify",
     "smoke": "node --env-file-if-exists=.env scripts/smoke.mjs",
     "workspace:create": "node --env-file-if-exists=.env --import tsx scripts/provision-workspace.ts",
+    "destination:requests": "node --env-file-if-exists=.env dist/scripts/review-destination.js",
     "destination:rotate": "node --env-file-if-exists=.env dist/scripts/rotate-destination.js",
     "destination:approve": "node --env-file-if-exists=.env --import tsx scripts/approve-destination.ts"
   },

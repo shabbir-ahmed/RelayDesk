@@ -8,5 +8,5 @@
     "rootDir": ".",
     "outDir": "dist"
   },
-  "include": ["src/worker/**/*.ts", "prisma/seed.ts", "scripts/provision-workspace.ts", "scripts/approve-destination.ts", "scripts/rotate-destination.ts"]
+  "include": ["src/worker/**/*.ts", "prisma/seed.ts", "scripts/provision-workspace.ts", "scripts/approve-destination.ts", "scripts/rotate-destination.ts", "scripts/review-destination.ts"]
 }

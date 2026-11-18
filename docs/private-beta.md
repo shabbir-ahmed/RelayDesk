@@ -1,6 +1,6 @@
 # Private beta
 
-Create a workspace and a named owner account from the sign-in page. Each workspace has separate Test and Live destinations, API keys, delivery history, alerts, and usage. Administrators approve outbound HTTPS destinations from the deployment terminal.
+Create a workspace and a named owner account from the sign-in page. Each workspace has separate Test and Live destinations, API keys, delivery history, alerts, and usage. Workspace owners request outbound HTTPS destinations in the dashboard. Administrators review requests from the deployment terminal.
 
 ## Start with Docker
 
@@ -42,7 +42,21 @@ docker compose stop web worker
 docker compose up --build -d --wait
 ```
 
-The self-service migration retains existing destinations, subscriptions, API keys, and delivery history in Live. It also counts events already accepted that UTC day. Approve a destination for the workspace and environment you want to use.
+The self-service migration retains existing destinations, subscriptions, API keys, and delivery history in Live. It also counts events already accepted that UTC day.
+
+In **Destinations**, an owner selects **Request destination** and enters a name and public HTTPS URL. The request stays in the selected Test or Live environment. Check **Destination requests** for the review status and any rejection reason. An owner can submit the URL again after rejection.
+
+From a trusted deployment terminal, list pending requests and approve or reject a request by ID. The list shows up to 100 pending requests, oldest first, with their workspace, environment, and URL. Review ownership and the intended environment before approving.
+
+```sh
+npm run destination:requests -- list
+npm run destination:requests -- approve <request-id>
+npm run destination:requests -- reject <request-id> 'Confirm that your team controls this endpoint.'
+```
+
+Build first when running from source. In Docker, replace `npm run destination:requests --` with `docker compose run --rm --no-deps worker node dist/scripts/review-destination.js`. Approval checks DNS with the existing outbound policy and prints a signing secret. Share the secret privately with the receiver operator. The owner can refresh the requests list to see the decision.
+
+Administrators can also approve a destination directly. Direct approval resolves any pending request for the same URL, workspace, and environment.
 
 ```sh
 docker compose run --rm --no-deps worker node dist/scripts/approve-destination.js \
@@ -83,7 +97,7 @@ Invited members can operate the workspace’s Test and Live environments. Owners
 
 Search **Deliveries** by event type, full event ID, or full delivery ID. Combine search with the status and destination filters.
 
-Open **Operations** for failure alerts and the audit log. A terminal failure opens an in-app alert once per delivery cycle. Acknowledging it keeps the entry available under **All alerts**. The audit log records destination approvals, subscription changes, manual replays, API key changes, and team invitations. Named accounts appear by username in relevant audit entries.
+Open **Operations** for failure alerts and the audit log. A terminal failure opens an in-app alert once per delivery cycle. Acknowledging it keeps the entry available under **All alerts**. The audit log records destination requests and decisions, subscription changes, manual replays, API key changes, and team invitations. Named accounts appear by username in relevant audit entries.
 
 ## Deployment boundaries
 
